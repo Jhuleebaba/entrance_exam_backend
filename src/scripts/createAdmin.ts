@@ -22,22 +22,22 @@ const createAdmin = async () => {
 
     // Hash the password
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash('admin123', salt);
+    const hashedPassword = await bcrypt.hash('admin1234', salt);
 
     // Create admin user
     const admin = new User({
       surname: 'User',
       firstName: 'Admin',
       fullName: 'Admin User',
-      email: 'admin@example.com',
+      email: 'admin@goodlyheritage.edu',
       password: hashedPassword,
       role: 'admin'
     });
 
     await admin.save();
     console.log('Admin user created successfully');
-    console.log('Email: admin@example.com');
-    console.log('Password: admin123');
+    console.log('Email: admin@goodlyheritage.edu');
+    console.log('Password: admin1234');
 
   } catch (error) {
     console.error('Error:', error);
