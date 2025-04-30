@@ -1,11 +1,10 @@
 import express from 'express';
-import { authenticateToken, isAdmin } from '../middleware/auth';
+import { authenticateToken as auth, isAdmin as admin } from '../middleware/auth';
 import Question from '../models/Question';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import parseDocument from '../utils/documentParser';
-import redis from '../utils/redis';
 
 const router = express.Router();
 
@@ -45,37 +44,24 @@ const upload = multer({
 });
 
 // Get all questions (admin only)
-router.get('/', authenticateToken, isAdmin, async (req, res) => {
+router.get('/', auth, admin, async (req, res) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
-    const skip = (page - 1) * limit;
-
-    // Get total count for pagination
-    const total = await Question.countDocuments();
-
-    // Get paginated questions
-    const questions = await Question.find()
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
+    const questions = await Question.find();
     res.json({
       success: true,
-      count: questions.length,
-      total,
-      totalPages: Math.ceil(total / limit),
-      currentPage: page,
       questions
     });
-  } catch (error) {
-    console.error('Error in GET /questions:', error);
-    res.status(500).json({ success: false, message: 'Error fetching questions' });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching questions',
+      error: error.message
+    });
   }
 });
 
 // Get questions by subject (admin only)
-router.get('/by-subject', authenticateToken, isAdmin, async (req, res) => {
+router.get('/by-subject', auth, admin, async (req, res) => {
   try {
     // Group questions by subject
     const questionsBySubject = await Question.aggregate([
@@ -98,7 +84,7 @@ router.get('/by-subject', authenticateToken, isAdmin, async (req, res) => {
 });
 
 // Upload document with questions (admin only)
-router.post('/upload', authenticateToken, isAdmin, upload.single('document'), async (req, res) => {
+router.post('/upload', auth, admin, upload.single('document'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ 
@@ -219,16 +205,9 @@ const processUploadedDocument = async (filePath: string, subject: string) => {
 };
 
 // Get random questions for exam
-router.get('/exam', authenticateToken, async (req, res) => {
+router.get('/exam', auth, async (req, res) => {
   try {
     console.log('Fetching random questions for exam...');
-    
-    // Try to get from cache first
-    const cachedQuestions = await redis.get('exam:questions');
-    if (cachedQuestions) {
-      console.log('Returning cached exam questions');
-      return res.json(JSON.parse(cachedQuestions));
-    }
     
     // Get all subjects
     const subjects = await Question.distinct('subject');
@@ -279,9 +258,6 @@ router.get('/exam', authenticateToken, async (req, res) => {
       totalObtainableMarks
     };
 
-    // Cache the response for 1 hour
-    await redis.setex('exam:questions', 3600, JSON.stringify(response));
-
     console.log(`Selected ${questions.length} questions for exam (${subjects.length} subjects × 30 questions)`);
     res.json(response);
   } catch (error) {
@@ -291,7 +267,7 @@ router.get('/exam', authenticateToken, async (req, res) => {
 });
 
 // Add new question (admin only)
-router.post('/', authenticateToken, isAdmin, async (req, res) => {
+router.post('/', auth, admin, async (req, res) => {
   try {
     console.log('Adding new question:', req.body);
     const { question, options, correctAnswer, subject, marks } = req.body;
@@ -348,7 +324,7 @@ router.post('/', authenticateToken, isAdmin, async (req, res) => {
 });
 
 // Update question (admin only)
-router.put('/:id', authenticateToken, isAdmin, async (req, res) => {
+router.put('/:id', auth, admin, async (req, res) => {
   try {
     console.log('Updating question:', req.params.id);
     const { question, options, correctAnswer, subject, marks } = req.body;
@@ -416,7 +392,7 @@ router.put('/:id', authenticateToken, isAdmin, async (req, res) => {
 });
 
 // Delete question (admin only)
-router.delete('/:id', authenticateToken, isAdmin, async (req, res) => {
+router.delete('/:id', auth, admin, async (req, res) => {
   try {
     console.log('Deleting question:', req.params.id);
     const deletedQuestion = await Question.findByIdAndDelete(req.params.id);

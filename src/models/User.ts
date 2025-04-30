@@ -4,9 +4,9 @@ import Settings from './Settings';
 
 export interface IUser extends mongoose.Document {
   examNumber: string;
-  password: string;
   surname: string;
   firstName: string;
+  lastName: string;
   fullName: string;
   email: string;
   phoneNumber: string;
@@ -14,10 +14,13 @@ export interface IUser extends mongoose.Document {
   sex: 'Male' | 'Female';
   stateOfOrigin: string;
   nationality: string;
+  password: string;
   role: 'admin' | 'student';
   examGroup: number;
   examDateTime: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
+  updateExamDateTime(settings: any): Promise<void>;
+  formatExamTime(): string | null;
 }
 
 const userSchema = new mongoose.Schema({
@@ -25,10 +28,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     unique: true,
     sparse: true, // This allows null values while maintaining uniqueness
-  },
-  password: {
-    type: String,
-    required: true,
   },
   surname: {
     type: String,
@@ -38,9 +37,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  fullName: {
-    type: String,
-  },
   email: {
     type: String,
     required: true,
@@ -48,21 +44,28 @@ const userSchema = new mongoose.Schema({
   },
   phoneNumber: {
     type: String,
-    required: false,
+    required: true,
   },
   dateOfBirth: {
     type: Date,
+    required: true,
   },
   sex: {
     type: String,
+    required: true,
     enum: ['Male', 'Female'],
   },
   stateOfOrigin: {
     type: String,
+    required: true,
   },
   nationality: {
     type: String,
     default: 'Nigerian',
+  },
+  password: {
+    type: String,
+    required: true,
   },
   role: {
     type: String,
@@ -78,6 +81,16 @@ const userSchema = new mongoose.Schema({
   },
 }, {
   timestamps: true,
+});
+
+// Virtual for lastName (same as surname)
+userSchema.virtual('lastName').get(function(this: IUser) {
+  return this.surname;
+});
+
+// Virtual for user's full name
+userSchema.virtual('fullName').get(function(this: IUser) {
+  return `${this.firstName} ${this.surname}`;
 });
 
 // Generate exam number
@@ -132,31 +145,19 @@ userSchema.pre('save', async function (next) {
         this.examGroup = examGroup;
 
         // Calculate the exam date and time for this group
-        // Parse base date and time
-        const baseDate = new Date(settings.examStartDate);
-        const [hours, minutes] = settings.examStartTime.split(':').map(Number);
-
-        baseDate.setHours(hours, minutes, 0, 0);
-
-        // Add interval hours based on group number
-        const examDateTime = new Date(baseDate);
-        examDateTime.setHours(
-          examDateTime.getHours() + (examGroup * settings.examGroupIntervalHours)
-        );
-
-        this.examDateTime = examDateTime;
+        if (settings.examStartTime) {
+          const examDateTime = new Date(settings.examStartTime);
+          examDateTime.setHours(
+            examDateTime.getHours() + (examGroup * settings.examGroupIntervalHours)
+          );
+          this.examDateTime = examDateTime;
+        }
       }
     }
     next();
   } catch (error) {
     next(error as CallbackError);
   }
-});
-
-// Set fullName from surname and firstName
-userSchema.pre('save', function (next) {
-  this.fullName = `${this.surname} ${this.firstName}`;
-  next();
 });
 
 // Hash password before saving
@@ -177,8 +178,32 @@ userSchema.methods.comparePassword = async function (candidatePassword: string):
   try {
     return await bcrypt.compare(candidatePassword, this.password);
   } catch (error) {
-    return false;
+    throw error;
   }
+};
+
+// Update the examDateTime based on settings
+userSchema.methods.updateExamDateTime = async function(settings: any) {
+  if (this.examGroup && settings.examStartTime) {
+    const examDate = new Date(settings.examStartTime);
+    const groupIndex = parseInt(this.examGroup.replace(/[^0-9]/g, '')) - 1;
+    const hoursToAdd = groupIndex * (settings.examGroupIntervalHours || 2);
+    
+    examDate.setHours(examDate.getHours() + hoursToAdd);
+    this.examDateTime = examDate;
+  }
+};
+
+// Format exam time
+userSchema.methods.formatExamTime = function() {
+  if (this.examDateTime) {
+    return this.examDateTime.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  }
+  return null;
 };
 
 export default mongoose.model<IUser>('User', userSchema); 

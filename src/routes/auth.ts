@@ -2,14 +2,36 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import User from '../models/User';
-import { authenticateToken, isAdmin } from '../middleware/auth';
+import { authenticateToken as auth, isAdmin as admin } from '../middleware/auth';
 import Settings from '../models/Settings';
 import archiver from 'archiver';
 import ExamResult from '../models/ExamResult';
-import { auth, admin } from '../middleware/auth';
 import { JWT_SECRET } from '../config';
 
 const router = express.Router();
+
+// Initialize empty scores object
+const emptyScores = {
+  Mathematics: 0,
+  English: 0,
+  'Quantitative Reasoning': 0,
+  'Verbal Reasoning': 0,
+  'General Paper': 0
+};
+
+// Helper function to clear scores
+function clearScores(scores: typeof emptyScores) {
+  Object.keys(scores).forEach(key => {
+    scores[key as keyof typeof scores] = 0;
+  });
+  return scores;
+}
+
+// Helper function to set a score
+function setScore(scores: typeof emptyScores, subject: keyof typeof scores, value: number) {
+  scores[subject] = value;
+  return scores;
+}
 
 // Get all students (admin only)
 router.get('/students', auth, admin, async (req, res) => {
@@ -234,7 +256,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Get current user
-router.get('/me', authenticateToken, async (req, res) => {
+router.get('/me', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user?.id).select('-password');
     if (!user) {
@@ -309,23 +331,35 @@ router.post('/create-admin', async (req, res) => {
   }
 });
 
-// GET settings
-router.get('/settings', auth, async (req, res) => {
+// Get settings
+router.get('/settings', auth, admin, async (req, res) => {
   try {
-    console.log('Fetching settings...');
-    let settings = await Settings.findOne({});
-    
+    const settings = await Settings.findOne();
     if (!settings) {
-      console.log('No settings found, creating default settings...');
-      settings = new Settings();
-      await settings.save();
+      return res.status(404).json({
+        success: false,
+        message: 'Settings not found'
+      });
     }
-    
-    console.log('Returning settings:', settings);
-    return res.json(settings);
-  } catch (err: any) {
-    console.error('Error fetching settings:', err.message);
-    return res.status(500).json({ message: 'Server error fetching settings' });
+
+    res.json({
+      success: true,
+      settings: {
+        examDuration: settings.examDuration,
+        examStartTime: settings.examStartTime,
+        examEndTime: settings.examEndTime,
+        registrationStartDate: settings.registrationStartDate,
+        registrationEndDate: settings.registrationEndDate,
+        examYear: settings.examYear,
+        questionsPerSubject: settings.questionsPerSubject
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching settings',
+      error: error.message
+    });
   }
 });
 
@@ -345,12 +379,13 @@ router.get('/exam-settings', async (req, res) => {
     
     // Return only the fields students need to see
     const publicSettings = {
-      examDurationMinutes: settings.examDurationMinutes,
-      examInstructions: settings.examInstructions,
-      examVenue: settings.examVenue,
-      examReportNextSteps: settings.examReportNextSteps,
-      examSlipInstructions: settings.examSlipInstructions,
-      totalExamQuestions: settings.totalExamQuestions
+      examDuration: settings.examDuration,
+      examStartTime: settings.examStartTime,
+      examEndTime: settings.examEndTime,
+      registrationStartDate: settings.registrationStartDate,
+      registrationEndDate: settings.registrationEndDate,
+      examYear: settings.examYear,
+      questionsPerSubject: settings.questionsPerSubject
     };
     
     console.log('[Backend] Returning public settings:', publicSettings);
@@ -365,79 +400,63 @@ router.get('/exam-settings', async (req, res) => {
   }
 });
 
-// UPDATE settings
+// Update settings
 router.put('/settings', auth, admin, async (req, res) => {
   try {
-    console.log('Updating settings with payload:', req.body);
     const {
-      examDurationMinutes,
-      examInstructions,
-      examStartDate,
+      examDuration,
       examStartTime,
-      examGroupSize,
-      examGroupIntervalHours,
-      examReportNextSteps,
-      examSlipInstructions,
-      examVenue,
-      totalExamQuestions,
+      examEndTime,
+      registrationStartDate,
+      registrationEndDate,
+      examYear,
       questionsPerSubject
     } = req.body;
 
-    // Find existing settings or create a new one
-    let settings = await Settings.findOne({});
+    let settings = await Settings.findOne();
     if (!settings) {
       settings = new Settings();
     }
 
-    // Update settings fields
-    if (examDurationMinutes) settings.examDurationMinutes = examDurationMinutes;
-    if (examInstructions) settings.examInstructions = examInstructions;
-    if (examStartDate) settings.examStartDate = examStartDate;
-    if (examStartTime) settings.examStartTime = examStartTime;
-    if (examGroupSize) settings.examGroupSize = examGroupSize;
-    if (examGroupIntervalHours) settings.examGroupIntervalHours = examGroupIntervalHours;
-    if (examReportNextSteps) settings.examReportNextSteps = examReportNextSteps;
-    if (examSlipInstructions) settings.examSlipInstructions = examSlipInstructions;
-    if (examVenue) settings.examVenue = examVenue;
-    if (totalExamQuestions !== undefined) settings.totalExamQuestions = totalExamQuestions;
-    
-    // Handle questionsPerSubject specially since it's a Map in MongoDB
+    // Update fields if provided
+    if (examDuration) settings.examDuration = examDuration;
+    if (examStartTime) settings.examStartTime = new Date(examStartTime);
+    if (examEndTime) settings.examEndTime = new Date(examEndTime);
+    if (registrationStartDate) settings.registrationStartDate = new Date(registrationStartDate);
+    if (registrationEndDate) settings.registrationEndDate = new Date(registrationEndDate);
+    if (examYear) settings.examYear = examYear;
+
+    // Update questions per subject
     if (questionsPerSubject) {
-      // Clear existing map
-      settings.questionsPerSubject.clear();
-      
-      // Add new entries, ensuring only the fixed subjects are set
-      const fixedSubjects = {
-        'Mathematics': 20,
-        'English': 20,
-        'Quantitative Reasoning': 20,
-        'Verbal Reasoning': 20,
-        'General Paper': 20
+      settings.questionsPerSubject = {
+        Mathematics: 0,
+        English: 0,
+        'Quantitative Reasoning': 0,
+        'Verbal Reasoning': 0,
+        'General Paper': 0,
+        ...questionsPerSubject
       };
-      
-      for (const [subject, count] of Object.entries(fixedSubjects)) {
-        settings.questionsPerSubject.set(subject, count);
-      }
-      
-      // Update total questions to match fixed structure
-      settings.totalExamQuestions = 100;
-      
-      console.log('Updated questionsPerSubject:', 
-        Array.from(settings.questionsPerSubject.entries()));
     }
 
     await settings.save();
-    console.log('Settings saved successfully');
-    
-    res.json({ success: true, settings });
-  } catch (err: any) {
-    console.error('Error updating settings:', err.message);
-    res.status(500).json({ success: false, message: 'Server error updating settings' });
+
+    res.json({
+      success: true,
+      message: 'Settings updated successfully',
+      settings
+    });
+  } catch (error: any) {
+    console.error('Error updating settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating settings',
+      error: error.message
+    });
   }
 });
 
 // Archive and reset year data (admin only)
-router.post('/archive-year', authenticateToken, isAdmin, async (req, res) => {
+router.post('/archive-year', auth, admin, async (req, res) => {
   try {
     // Set response headers for zip download
     res.setHeader('Content-Type', 'application/zip');

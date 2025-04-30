@@ -4,18 +4,17 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import morgan from 'morgan';
 import compression from 'compression';
-import Redis from 'ioredis';
+import { rateLimit } from 'express-rate-limit';
+import helmet from 'helmet';
+import mongoSanitize from 'express-mongo-sanitize';
+import xss from 'xss-clean';
+import hpp from 'hpp';
 import User from './models/User';
 import authRoutes from './routes/auth';
 import questionRoutes from './routes/questions';
 import examResultRoutes from './routes/exam-results';
-import { 
-  apiLimiter, 
-  securityHeaders, 
-  corsOptions, 
-  sanitizeInput,
-  requestSizeLimit 
-} from './middleware/security';
+import examRoutes from './routes/exam';
+import settingsRoutes from './routes/settings';
 import { errorHandler } from './middleware/errorHandler';
 import logger, { stream } from './utils/logger';
 
@@ -29,26 +28,38 @@ logger.info('Starting server initialization', {
 
 const app = express();
 
-// Security Middleware
-app.use(securityHeaders);
-app.use(cors(corsOptions));
-app.use(sanitizeInput);
-app.use(requestSizeLimit);
+// Set security HTTP headers
+app.use(helmet());
 
-// Apply rate limiting to all routes
-app.use(apiLimiter);
+// Enable CORS
+app.use(cors());
 
-// Logging middleware
+// Development logging
 if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev', { stream }));
-} else {
-  app.use(morgan('combined', { stream }));
+  app.use(morgan('dev'));
 }
 
-// Initialize Redis client
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+// Limit requests from same API
+const limiter = rateLimit({
+  max: 100, // Limit each IP to 100 requests per `window`
+  windowMs: 60 * 60 * 1000, // 1 hour
+  message: 'Too many requests from this IP, please try again in an hour!'
+});
+app.use('/api', limiter);
 
-// Add compression middleware
+// Body parser, reading data from body into req.body
+app.use(express.json({ limit: '10kb' }));
+
+// Data sanitization against NoSQL query injection
+app.use(mongoSanitize());
+
+// Data sanitization against XSS
+app.use(xss());
+
+// Prevent parameter pollution
+app.use(hpp());
+
+// Compression middleware
 app.use(compression());
 
 // MongoDB Connection
@@ -112,6 +123,8 @@ connectDB();
 app.use('/api/auth', authRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/exam-results', examResultRoutes);
+app.use('/api/exam', examRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

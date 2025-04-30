@@ -1,31 +1,67 @@
-import mongoose from 'mongoose';
+import mongoose, { Schema, Document } from 'mongoose';
 
-export interface ISettings extends mongoose.Document {
-  examDurationMinutes: number;
+export interface SubjectQuestions {
+  Mathematics: number;
+  English: number;
+  'Quantitative Reasoning': number;
+  'Verbal Reasoning': number;
+  'General Paper': number;
+}
+
+export interface ISettings extends Document {
+  questionsPerSubject: SubjectQuestions;
+  examDuration: number;
+  examStartTime: Date;
+  examEndTime: Date;
+  registrationStartDate: Date;
+  registrationEndDate: Date;
+  examYear: number;
   examInstructions: string;
   examSlipInstructions: string;
   examVenue: string;
   examStartDate: Date;
-  examStartTime: string;
   examGroupSize: number;
   examGroupIntervalHours: number;
   examReportNextSteps: string;
   totalExamQuestions: number;
-  questionsPerSubject: {
-    Mathematics: number;
-    English: number;
-    'Quantitative Reasoning': number;
-    'Verbal Reasoning': number;
-    'General Paper': number;
-  };
-  updatedAt: Date;
 }
 
-const settingsSchema = new mongoose.Schema({
-  examDurationMinutes: {
+const settingsSchema = new Schema({
+  questionsPerSubject: {
+    type: {
+      Mathematics: { type: Number, default: 0 },
+      English: { type: Number, default: 0 },
+      'Quantitative Reasoning': { type: Number, default: 0 },
+      'Verbal Reasoning': { type: Number, default: 0 },
+      'General Paper': { type: Number, default: 0 }
+    },
+    required: true,
+    _id: false
+  },
+  examDuration: {
     type: Number,
     required: true,
-    default: 120 // Default 2 hours
+    default: 180 // 3 hours in minutes
+  },
+  examStartTime: {
+    type: Date,
+    required: true
+  },
+  examEndTime: {
+    type: Date,
+    required: true
+  },
+  registrationStartDate: {
+    type: Date,
+    required: true
+  },
+  registrationEndDate: {
+    type: Date,
+    required: true
+  },
+  examYear: {
+    type: Number,
+    required: true
   },
   examInstructions: {
     type: String,
@@ -56,11 +92,6 @@ const settingsSchema = new mongoose.Schema({
     required: true,
     default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // Default to 1 week from now
   },
-  examStartTime: {
-    type: String,
-    required: true,
-    default: '09:00' // Default to 9 AM
-  },
   examGroupSize: {
     type: Number,
     required: true,
@@ -83,17 +114,6 @@ const settingsSchema = new mongoose.Schema({
     type: Number,
     required: true,
     default: 100 // Default to 100 questions total (20 per subject)
-  },
-  questionsPerSubject: {
-    type: Map,
-    of: Number,
-    default: {
-      'Mathematics': 20,
-      'English': 20,
-      'Quantitative Reasoning': 20,
-      'Verbal Reasoning': 20,
-      'General Paper': 20
-    }
   }
 }, {
   timestamps: true
