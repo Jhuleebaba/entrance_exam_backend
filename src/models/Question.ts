@@ -1,14 +1,6 @@
 import mongoose from 'mongoose';
 
-interface IQuestion {
-  question: string;
-  options: string[];
-  correctAnswer: string;
-  subject: string;
-  marks: number;
-}
-
-const questionSchema = new mongoose.Schema<IQuestion>({
+const questionSchema = new mongoose.Schema({
   question: {
     type: String,
     required: [true, 'Question text is required'],
@@ -16,36 +8,37 @@ const questionSchema = new mongoose.Schema<IQuestion>({
   },
   options: {
     type: [String],
-    required: [true, 'Options are required'],
+    required: [true, 'Four options are required'],
     validate: {
-      validator: function(this: IQuestion, v: string[]) {
+      validator: function(v: string[]) {
         return v.length === 4;
       },
-      message: 'Question must have exactly 4 options'
+      message: 'Exactly four options are required'
     }
   },
   correctAnswer: {
     type: String,
-    required: [true, 'Correct answer is required'],
-    validate: {
-      validator: function(this: IQuestion, v: string) {
-        return this.options.includes(v);
-      },
-      message: 'Correct answer must be one of the options'
-    }
+    required: [true, 'Correct answer is required']
   },
   subject: {
     type: String,
     required: [true, 'Subject is required'],
-    trim: true
+    index: true
   },
   marks: {
     type: Number,
     required: [true, 'Marks are required'],
     min: [1, 'Marks must be at least 1']
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
   }
-}, {
-  timestamps: true
 });
 
-export default mongoose.model<IQuestion>('Question', questionSchema); 
+// Add compound index for subject and random selection
+questionSchema.index({ subject: 1, _id: 1 });
+
+const Question = mongoose.model('Question', questionSchema);
+
+export default Question; 

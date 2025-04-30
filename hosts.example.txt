@@ -1,0 +1,6 @@
+# MongoDB Host
+# Replace with your MongoDB host from MongoDB Atlas
+mongodb_host_placeholder
+
+# Other hosts can be added here
+# Format: IP_Address hostname 

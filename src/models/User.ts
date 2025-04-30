@@ -9,6 +9,7 @@ export interface IUser extends mongoose.Document {
   firstName: string;
   fullName: string;
   email: string;
+  phoneNumber: string;
   dateOfBirth: Date;
   sex: 'Male' | 'Female';
   stateOfOrigin: string;
@@ -45,6 +46,10 @@ const userSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
+  phoneNumber: {
+    type: String,
+    required: false,
+  },
   dateOfBirth: {
     type: Date,
   },
@@ -76,7 +81,7 @@ const userSchema = new mongoose.Schema({
 });
 
 // Generate exam number
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function (next) {
   try {
     if (this.isNew && this.role === 'student') {
       let isUnique = false;
@@ -87,16 +92,16 @@ userSchema.pre('save', async function(next) {
         const currentYear = new Date().getFullYear().toString().slice(-2);
         const randomNum = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
         const proposedExamNumber = `GH${currentYear}${randomNum}`;
-        
+
         // Check if this exam number already exists
         const User = mongoose.model('User');
         const existingUser = await User.findOne({ examNumber: proposedExamNumber });
-        
+
         if (!existingUser) {
           this.examNumber = proposedExamNumber;
           isUnique = true;
         }
-        
+
         attempts++;
       }
 
@@ -111,34 +116,34 @@ userSchema.pre('save', async function(next) {
 });
 
 // Assign exam group and date/time
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function (next) {
   try {
     if (this.isNew && this.role === 'student') {
       // Get settings
       const settings = await Settings.findOne();
-      
+
       if (settings) {
         // Get the count of all students to determine the group
         const User = mongoose.model('User');
         const studentCount = await User.countDocuments({ role: 'student' });
-        
+
         // Assign to exam group (0-indexed)
         const examGroup = Math.floor(studentCount / settings.examGroupSize);
         this.examGroup = examGroup;
-        
+
         // Calculate the exam date and time for this group
         // Parse base date and time
         const baseDate = new Date(settings.examStartDate);
         const [hours, minutes] = settings.examStartTime.split(':').map(Number);
-        
+
         baseDate.setHours(hours, minutes, 0, 0);
-        
+
         // Add interval hours based on group number
         const examDateTime = new Date(baseDate);
         examDateTime.setHours(
           examDateTime.getHours() + (examGroup * settings.examGroupIntervalHours)
         );
-        
+
         this.examDateTime = examDateTime;
       }
     }
@@ -149,15 +154,15 @@ userSchema.pre('save', async function(next) {
 });
 
 // Set fullName from surname and firstName
-userSchema.pre('save', function(next) {
+userSchema.pre('save', function (next) {
   this.fullName = `${this.surname} ${this.firstName}`;
   next();
 });
 
 // Hash password before saving
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
-  
+
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
@@ -168,7 +173,7 @@ userSchema.pre('save', async function(next) {
 });
 
 // Method to compare password
-userSchema.methods.comparePassword = async function(candidatePassword: string): Promise<boolean> {
+userSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
   try {
     return await bcrypt.compare(candidatePassword, this.password);
   } catch (error) {

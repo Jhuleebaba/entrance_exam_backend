@@ -5,6 +5,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import parseDocument from '../utils/documentParser';
+import redis from '../utils/redis';
 
 const router = express.Router();
 
@@ -46,12 +47,25 @@ const upload = multer({
 // Get all questions (admin only)
 router.get('/', authenticateToken, isAdmin, async (req, res) => {
   try {
-    console.log('Fetching all questions...');
-    const questions = await Question.find();
-    console.log(`Found ${questions.length} questions`);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+
+    // Get total count for pagination
+    const total = await Question.countDocuments();
+
+    // Get paginated questions
+    const questions = await Question.find()
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
     res.json({
       success: true,
       count: questions.length,
+      total,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
       questions
     });
   } catch (error) {
@@ -208,12 +222,46 @@ const processUploadedDocument = async (filePath: string, subject: string) => {
 router.get('/exam', authenticateToken, async (req, res) => {
   try {
     console.log('Fetching random questions for exam...');
-    // Get 50 random questions (adjust the number as needed)
+    
+    // Try to get from cache first
+    const cachedQuestions = await redis.get('exam:questions');
+    if (cachedQuestions) {
+      console.log('Returning cached exam questions');
+      return res.json(JSON.parse(cachedQuestions));
+    }
+    
+    // Get all subjects
+    const subjects = await Question.distinct('subject');
+    
+    // Get 30 random questions for each subject using a single aggregation
     const questions = await Question.aggregate([
-      { $sample: { size: 50 } }
+      {
+        $group: {
+          _id: '$subject',
+          questions: { $push: '$$ROOT' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          subject: '$_id',
+          questions: {
+            $slice: [
+              { $shuffle: '$questions' },
+              30
+            ]
+          }
+        }
+      },
+      {
+        $unwind: '$questions'
+      },
+      {
+        $replaceRoot: { newRoot: '$questions' }
+      }
     ]);
 
-    // Calculate total obtainable marks for these questions
+    // Calculate total obtainable marks
     const totalObtainableMarks = questions.reduce((total, q) => total + q.marks, 0);
 
     // Remove correct answers from response
@@ -225,12 +273,17 @@ router.get('/exam', authenticateToken, async (req, res) => {
       subject: q.subject
     }));
 
-    console.log(`Selected ${questions.length} random questions for exam`);
-    res.json({ 
-      success: true, 
+    const response = {
+      success: true,
       questions: questionsForStudent,
       totalObtainableMarks
-    });
+    };
+
+    // Cache the response for 1 hour
+    await redis.setex('exam:questions', 3600, JSON.stringify(response));
+
+    console.log(`Selected ${questions.length} questions for exam (${subjects.length} subjects × 30 questions)`);
+    res.json(response);
   } catch (error) {
     console.error('Error in GET /questions/exam:', error);
     res.status(500).json({ success: false, message: 'Error fetching exam questions' });

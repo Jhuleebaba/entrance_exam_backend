@@ -73,9 +73,47 @@ router.get('/:id', authenticateToken, async (req, res) => {
       });
     }
 
+    // Ensure answers and examQuestions are Maps (fix for MongoDB serialization)
+    if (result && result.answers && !(result.answers instanceof Map)) {
+      result.answers = new Map(Object.entries(result.answers));
+    }
+    if (result && result.examQuestions && !(result.examQuestions instanceof Map)) {
+      result.examQuestions = new Map(Object.entries(result.examQuestions));
+    }
+
+    // Build detailed answers array
+    const answersArray = [];
+    if (result.answers && result.examQuestions) {
+      console.log('Raw result.answers:', result.answers);
+      console.log('Raw result.examQuestions:', result.examQuestions);
+      for (const [questionId, selectedAnswer] of result.answers.entries()) {
+        // Fetch question details
+        const questionDoc = await Question.findById(questionId);
+        if (questionDoc) {
+          const examQ = result.examQuestions.get(questionId);
+          const isCorrect = examQ && selectedAnswer === examQ.correctAnswer;
+          answersArray.push({
+            question: {
+              question: questionDoc.question,
+              options: questionDoc.options,
+              correctAnswer: questionDoc.correctAnswer,
+              subject: questionDoc.subject,
+              marks: questionDoc.marks
+            },
+            selectedAnswer,
+            isCorrect
+          });
+        }
+      }
+    }
+    console.log('Built answersArray:', answersArray);
+
     res.json({
       success: true,
-      result
+      result: {
+        ...result.toObject(),
+        answers: answersArray
+      }
     });
   } catch (error: any) {
     console.error('Error fetching exam result:', error);

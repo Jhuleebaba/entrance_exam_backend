@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 
 const createAdmin = async () => {
   try {
-    await mongoose.connect('mongodb://localhost:27017/entrance-exam');
+    await mongoose.connect('mongodb+srv://jhulee1:Omoiyaeyo1@cluster0.da7b5xz.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0');
     console.log('Connected to MongoDB');
 
     // Create admin user schema
