@@ -334,20 +334,50 @@ router.post('/create-admin', async (req, res) => {
 // Get settings
 router.get('/settings', auth, admin, async (req, res) => {
   try {
-    const settings = await Settings.findOne();
+    let settings = await Settings.findOne();
     if (!settings) {
-      return res.status(404).json({
-        success: false,
-        message: 'Settings not found'
+      // Create default settings if none exist
+      const now = new Date();
+      const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const twoWeeksFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+      
+      settings = new Settings({
+        examDuration: 120,
+        examStartTime: oneWeekFromNow,
+        examEndTime: twoWeeksFromNow,
+        registrationStartDate: now,
+        registrationEndDate: oneWeekFromNow,
+        examYear: new Date().getFullYear(),
+        examStartDate: oneWeekFromNow,
+        examGroupSize: 10,
+        examGroupIntervalHours: 2,
+        totalExamQuestions: 100,
+        questionsPerSubject: {
+          Mathematics: 20,
+          English: 20,
+          'Quantitative Reasoning': 20,
+          'Verbal Reasoning': 20,
+          'General Paper': 20
+        }
       });
+      await settings.save();
     }
 
     res.json({
       success: true,
       settings: {
+        examDurationMinutes: settings.examDuration, // Map examDuration to examDurationMinutes
         examDuration: settings.examDuration,
+        examInstructions: settings.examInstructions,
         examStartTime: settings.examStartTime,
         examEndTime: settings.examEndTime,
+        examStartDate: settings.examStartDate,
+        examGroupSize: settings.examGroupSize,
+        examGroupIntervalHours: settings.examGroupIntervalHours,
+        examReportNextSteps: settings.examReportNextSteps,
+        examSlipInstructions: settings.examSlipInstructions,
+        examVenue: settings.examVenue,
+        totalExamQuestions: settings.totalExamQuestions,
         registrationStartDate: settings.registrationStartDate,
         registrationEndDate: settings.registrationEndDate,
         examYear: settings.examYear,
@@ -373,13 +403,37 @@ router.get('/exam-settings', async (req, res) => {
     // If no settings exist yet, create default settings
     if (!settings) {
       console.log('[Backend] No settings found, creating defaults');
-      settings = new Settings();
+      const now = new Date();
+      const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const twoWeeksFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+      
+      settings = new Settings({
+        examDuration: 120,
+        examStartTime: oneWeekFromNow,
+        examEndTime: twoWeeksFromNow,
+        registrationStartDate: now,
+        registrationEndDate: oneWeekFromNow,
+        examYear: new Date().getFullYear(),
+        examStartDate: oneWeekFromNow,
+        examGroupSize: 10,
+        examGroupIntervalHours: 2,
+        totalExamQuestions: 100,
+        questionsPerSubject: {
+          Mathematics: 20,
+          English: 20,
+          'Quantitative Reasoning': 20,
+          'Verbal Reasoning': 20,
+          'General Paper': 20
+        }
+      });
       await settings.save();
     }
     
     // Return only the fields students need to see
     const publicSettings = {
+      examDurationMinutes: settings.examDuration, // Map examDuration to examDurationMinutes for frontend
       examDuration: settings.examDuration,
+      examInstructions: settings.examInstructions,
       examStartTime: settings.examStartTime,
       examEndTime: settings.examEndTime,
       registrationStartDate: settings.registrationStartDate,
@@ -403,10 +457,21 @@ router.get('/exam-settings', async (req, res) => {
 // Update settings
 router.put('/settings', auth, admin, async (req, res) => {
   try {
+    console.log('[Backend] PUT /settings - Request body:', req.body);
+    
     const {
+      examDurationMinutes,
       examDuration,
+      examInstructions,
       examStartTime,
       examEndTime,
+      examStartDate,
+      examGroupSize,
+      examGroupIntervalHours,
+      examReportNextSteps,
+      examSlipInstructions,
+      examVenue,
+      totalExamQuestions,
       registrationStartDate,
       registrationEndDate,
       examYear,
@@ -418,13 +483,22 @@ router.put('/settings', auth, admin, async (req, res) => {
       settings = new Settings();
     }
 
-    // Update fields if provided
-    if (examDuration) settings.examDuration = examDuration;
-    if (examStartTime) settings.examStartTime = new Date(examStartTime);
-    if (examEndTime) settings.examEndTime = new Date(examEndTime);
-    if (registrationStartDate) settings.registrationStartDate = new Date(registrationStartDate);
-    if (registrationEndDate) settings.registrationEndDate = new Date(registrationEndDate);
-    if (examYear) settings.examYear = examYear;
+    // Update fields if provided - handle both examDuration and examDurationMinutes
+    if (examDurationMinutes !== undefined) settings.examDuration = examDurationMinutes;
+    if (examDuration !== undefined) settings.examDuration = examDuration;
+    if (examInstructions !== undefined) settings.examInstructions = examInstructions;
+    if (examStartTime !== undefined) settings.examStartTime = new Date(examStartTime);
+    if (examEndTime !== undefined) settings.examEndTime = new Date(examEndTime);
+    if (examStartDate !== undefined) settings.examStartDate = new Date(examStartDate);
+    if (examGroupSize !== undefined) settings.examGroupSize = examGroupSize;
+    if (examGroupIntervalHours !== undefined) settings.examGroupIntervalHours = examGroupIntervalHours;
+    if (examReportNextSteps !== undefined) settings.examReportNextSteps = examReportNextSteps;
+    if (examSlipInstructions !== undefined) settings.examSlipInstructions = examSlipInstructions;
+    if (examVenue !== undefined) settings.examVenue = examVenue;
+    if (totalExamQuestions !== undefined) settings.totalExamQuestions = totalExamQuestions;
+    if (registrationStartDate !== undefined) settings.registrationStartDate = new Date(registrationStartDate);
+    if (registrationEndDate !== undefined) settings.registrationEndDate = new Date(registrationEndDate);
+    if (examYear !== undefined) settings.examYear = examYear;
 
     // Update questions per subject
     if (questionsPerSubject) {
@@ -439,6 +513,7 @@ router.put('/settings', auth, admin, async (req, res) => {
     }
 
     await settings.save();
+    console.log('[Backend] Settings saved successfully:', settings);
 
     res.json({
       success: true,
