@@ -41,7 +41,7 @@ const settingsSchema = new Schema({
   examDuration: {
     type: Number,
     required: true,
-    default: 180 // 3 hours in minutes
+    default: 120 // 2 hours in minutes
   },
   examStartTime: {
     type: Date,
