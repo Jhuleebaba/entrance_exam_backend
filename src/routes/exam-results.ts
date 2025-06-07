@@ -141,24 +141,47 @@ router.post('/start', authenticateToken, async (req, res) => {
       });
     }
 
-    // Get random questions and total obtainable marks for the exam
-    const questionsResponse = await Question.aggregate([
-      { $sample: { size: 50 } }
-    ]);
+    // Get exam questions efficiently using the optimized questions endpoint logic
+    const subjectConfig = [
+      { name: 'Mathematics', count: 20 },
+      { name: 'English', count: 20 },
+      { name: 'Verbal Reasoning', count: 20 },
+      { name: 'Quantitative Reasoning', count: 20 },
+      { name: 'General Paper', count: 20 }
+    ];
+
+    // Use parallel queries for better performance
+    const questionPromises = subjectConfig.map(async ({ name, count }) => {
+      return Question.aggregate([
+        { $match: { subject: name } },
+        { $sample: { size: count } }
+      ]);
+    });
+
+    // Execute all queries in parallel
+    const subjectResults = await Promise.all(questionPromises);
+    const questionsResponse = subjectResults.flat();
+
+    if (questionsResponse.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No questions available for exam'
+      });
+    }
 
     // Calculate total obtainable marks for these specific questions
-    const totalObtainableMarks = questionsResponse.reduce((total, q) => total + q.marks, 0);
+    const totalObtainableMarks = questionsResponse.reduce((total, q) => total + (q.marks || 1), 0);
 
-    // Create a Map for exam questions
+    // Create a Map for exam questions (store answers for grading)
     const examQuestions = new Map();
     questionsResponse.forEach(q => {
       examQuestions.set(q._id.toString(), {
-        marks: q.marks,
+        marks: q.marks || 1,
         correctAnswer: q.correctAnswer
       });
     });
 
-    console.log('Storing exam questions:', Object.fromEntries(examQuestions)); // Debug log
+    console.log(`Storing ${questionsResponse.length} exam questions for grading`);
 
     // Create a new exam result
     const result = new ExamResult({
@@ -179,7 +202,7 @@ router.post('/start', authenticateToken, async (req, res) => {
       _id: q._id,
       question: q.question,
       options: q.options,
-      marks: q.marks,
+      marks: q.marks || 1,
       subject: q.subject
     }));
 
@@ -189,7 +212,9 @@ router.post('/start', authenticateToken, async (req, res) => {
       result: {
         _id: result._id,
         startTime: result.startTime,
-        questions: questionsForStudent
+        questions: questionsForStudent,
+        totalQuestions: questionsResponse.length,
+        totalObtainableMarks
       }
     });
   } catch (error: any) {
@@ -197,7 +222,7 @@ router.post('/start', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error starting exam',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });

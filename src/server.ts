@@ -74,10 +74,20 @@ mongoose.set('strictQuery', false);
 
 const connectDB = async () => {
   try {
-    await mongoose.connect(MONGODB_URI);
+    const connectionOptions = {
+      maxPoolSize: 10, // Maintain up to 10 socket connections
+      serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
+      socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
+      family: 4, // Use IPv4, skip trying IPv6
+      bufferCommands: false, // Disable mongoose buffering
+      bufferMaxEntries: 0, // Disable mongoose buffering
+    };
+
+    await mongoose.connect(MONGODB_URI, connectionOptions);
     logger.info('MongoDB Connected Successfully', {
       database: mongoose.connection.name,
-      host: mongoose.connection.host
+      host: mongoose.connection.host,
+      maxPoolSize: connectionOptions.maxPoolSize
     });
     
     // Create admin user if it doesn't exist

@@ -209,60 +209,63 @@ router.get('/exam', auth, async (req, res) => {
   try {
     console.log('Fetching random questions for exam...');
     
-    // Get all subjects
-    const subjects = await Question.distinct('subject');
-    
-    // Get 30 random questions for each subject using a single aggregation
-    const questions = await Question.aggregate([
-      {
-        $group: {
-          _id: '$subject',
-          questions: { $push: '$$ROOT' }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          subject: '$_id',
-          questions: {
-            $slice: [
-              { $shuffle: '$questions' },
-              30
-            ]
+    // Fixed subjects configuration - 5 subjects with 20 questions each
+    const subjectConfig = [
+      { name: 'Mathematics', count: 20 },
+      { name: 'English', count: 20 },
+      { name: 'Verbal Reasoning', count: 20 },
+      { name: 'Quantitative Reasoning', count: 20 },
+      { name: 'General Paper', count: 20 }
+    ];
+
+    // Use parallel queries for better performance
+    const questionPromises = subjectConfig.map(async ({ name, count }) => {
+      return Question.aggregate([
+        { $match: { subject: name } },
+        { $sample: { size: count } },
+        { 
+          $project: {
+            _id: 1,
+            question: 1,
+            options: 1,
+            marks: 1,
+            subject: 1
+            // Exclude correctAnswer for security
           }
         }
-      },
-      {
-        $unwind: '$questions'
-      },
-      {
-        $replaceRoot: { newRoot: '$questions' }
-      }
-    ]);
+      ]);
+    });
 
-    // Calculate total obtainable marks
-    const totalObtainableMarks = questions.reduce((total, q) => total + q.marks, 0);
+    // Execute all queries in parallel
+    const subjectResults = await Promise.all(questionPromises);
+    
+    // Flatten the results
+    const questions = subjectResults.flat();
 
-    // Remove correct answers from response
-    const questionsForStudent = questions.map(q => ({
-      _id: q._id,
-      question: q.question,
-      options: q.options,
-      marks: q.marks,
-      subject: q.subject
-    }));
+    // Validate we have enough questions
+    if (questions.length < 100) {
+      console.warn(`Only ${questions.length} questions available, expected 100`);
+    }
+
+    // Calculate total obtainable marks (assuming 1 mark per question)
+    const totalObtainableMarks = questions.reduce((total, q) => total + (q.marks || 1), 0);
 
     const response = {
       success: true,
-      questions: questionsForStudent,
-      totalObtainableMarks
+      questions,
+      totalObtainableMarks,
+      questionCount: questions.length
     };
 
-    console.log(`Selected ${questions.length} questions for exam (${subjects.length} subjects × 30 questions)`);
+    console.log(`Selected ${questions.length} questions for exam from ${subjectConfig.length} subjects`);
     res.json(response);
   } catch (error) {
     console.error('Error in GET /questions/exam:', error);
-    res.status(500).json({ success: false, message: 'Error fetching exam questions' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching exam questions',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
