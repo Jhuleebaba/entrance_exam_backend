@@ -12,6 +12,7 @@ export interface ISettings extends Document {
   questionsPerSubject: SubjectQuestions;
   examDuration: number;
   examStartTime: Date;
+  examStartTimeString: string; // Time of day as string like "09:00"
   examEndTime: Date;
   registrationStartDate: Date;
   registrationEndDate: Date;
@@ -46,6 +47,11 @@ const settingsSchema = new Schema({
   examStartTime: {
     type: Date,
     required: true
+  },
+  examStartTimeString: {
+    type: String,
+    required: false,
+    default: '09:00' // Default to 9:00 AM
   },
   examEndTime: {
     type: Date,

@@ -12,7 +12,7 @@ const router = express.Router();
 router.get('/all', authenticateToken, isAdmin, (async (req, res) => {
   try {
     const results = await ExamResult.find()
-      .populate('user', 'username fullName examNumber')
+      .populate('user', 'surname firstName fullName examNumber email phoneNumber sex stateOfOrigin nationality')
       .sort({ createdAt: -1 });
 
     res.json({
@@ -34,7 +34,7 @@ router.get('/all', authenticateToken, isAdmin, (async (req, res) => {
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const results = await ExamResult.find({ user: req.user?.id })
-      .populate('user', 'username fullName examNumber')
+      .populate('user', 'surname firstName fullName examNumber email phoneNumber sex stateOfOrigin nationality')
       .sort({ createdAt: -1 });
 
     res.json({
@@ -56,7 +56,7 @@ router.get('/', authenticateToken, async (req, res) => {
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const result = await ExamResult.findById(req.params.id)
-      .populate('user', 'username fullName examNumber');
+      .populate('user', 'surname firstName fullName examNumber email phoneNumber sex stateOfOrigin nationality');
 
     if (!result) {
       return res.status(404).json({

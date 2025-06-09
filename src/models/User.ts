@@ -145,17 +145,37 @@ userSchema.pre('save', async function (next) {
         this.examGroup = examGroup;
 
         // Calculate the exam date and time for this group
-        if (settings.examStartTime) {
-          const examDateTime = new Date(settings.examStartTime);
+        if (settings.examStartDate) {
+          // Create a new date from the exam start date
+          const examDateTime = new Date(settings.examStartDate);
+          
+          // If there's a start time string, parse it and set it
+          const timeString = settings.examStartTimeString || '09:00'; // Default to 9:00 AM
+          if (timeString.includes(':')) {
+            const [hours, minutes] = timeString.split(':').map(Number);
+            examDateTime.setHours(hours, minutes, 0, 0);
+          } else {
+            // Default to 9:00 AM if time format is invalid
+            examDateTime.setHours(9, 0, 0, 0);
+          }
+          
+          // Add hours for the group interval
           examDateTime.setHours(
             examDateTime.getHours() + (examGroup * settings.examGroupIntervalHours)
           );
+          
           this.examDateTime = examDateTime;
+          console.log(`Assigned student to group ${examGroup}, exam time: ${examDateTime}`);
+        } else {
+          console.warn('No exam start date found in settings');
         }
+      } else {
+        console.warn('No settings document found');
       }
     }
     next();
   } catch (error) {
+    console.error('Error in exam scheduling pre-save hook:', error);
     next(error as CallbackError);
   }
 });

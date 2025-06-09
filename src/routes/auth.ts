@@ -39,14 +39,33 @@ router.get('/students', auth, admin, async (req, res) => {
     const students = await User.find({ role: 'student' })
       .select('-password -__v');
     
-    if (students.length > 0) {
-      console.log(`First student: ${students[0].firstName} ${students[0].lastName}`);
+    // Convert to objects and add computed fullName consistently  
+    const studentsWithFullName = students.map(student => {
+      const studentObj = student.toObject();
+      return {
+        ...studentObj,
+        fullName: `${student.firstName} ${student.surname}`,
+        phoneNumber: student.phoneNumber || 'Not provided'
+      };
+    });
+    
+    console.log(`Fetched ${studentsWithFullName.length} students`);
+    if (studentsWithFullName.length > 0) {
+      console.log(`First student: ${studentsWithFullName[0].firstName} ${studentsWithFullName[0].surname} (${studentsWithFullName[0].fullName})`);
+      console.log(`Exam group: ${studentsWithFullName[0].examGroup}, Exam date: ${studentsWithFullName[0].examDateTime}`);
     }
     
-    res.json({ students });
+    res.json({ 
+      success: true,
+      students: studentsWithFullName 
+    });
   } catch (err: any) {
     console.error('Error fetching students:', err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: err.message
+    });
   }
 });
 
@@ -369,7 +388,8 @@ router.get('/settings', auth, admin, async (req, res) => {
         examDurationMinutes: settings.examDuration, // Map examDuration to examDurationMinutes
         examDuration: settings.examDuration,
         examInstructions: settings.examInstructions,
-        examStartTime: settings.examStartTime,
+        examStartTime: settings.examStartTimeString || '09:00', // Return time string for frontend
+        examStartTimeDate: settings.examStartTime, // Keep original for backwards compatibility
         examEndTime: settings.examEndTime,
         examStartDate: settings.examStartDate,
         examGroupSize: settings.examGroupSize,
@@ -487,7 +507,15 @@ router.put('/settings', auth, admin, async (req, res) => {
     if (examDurationMinutes !== undefined) settings.examDuration = examDurationMinutes;
     if (examDuration !== undefined) settings.examDuration = examDuration;
     if (examInstructions !== undefined) settings.examInstructions = examInstructions;
-    if (examStartTime !== undefined) settings.examStartTime = new Date(examStartTime);
+    if (examStartTime !== undefined) {
+      // Handle examStartTime - if it's a time string like "09:00", store it in examStartTimeString
+      // If it's a date, store it in examStartTime (for backwards compatibility)
+      if (typeof examStartTime === 'string' && examStartTime.includes(':')) {
+        settings.examStartTimeString = examStartTime;
+      } else {
+        settings.examStartTime = new Date(examStartTime);
+      }
+    }
     if (examEndTime !== undefined) settings.examEndTime = new Date(examEndTime);
     if (examStartDate !== undefined) settings.examStartDate = new Date(examStartDate);
     if (examGroupSize !== undefined) settings.examGroupSize = examGroupSize;
