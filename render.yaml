@@ -21,3 +21,9 @@ services:
         sync: false
       - key: JWT_EXPIRES_IN
         value: "24h"
+      - key: REDIS_URL
+        sync: false
+      - key: REDIS_HOST
+        value: localhost
+      - key: REDIS_PORT
+        value: 6379

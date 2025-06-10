@@ -5,6 +5,9 @@ import Question from '../models/Question';
 import { Request, Response } from 'express';
 import { AuthRequest } from '../types/auth';
 import { RequestHandler } from '../types/express';
+import redisService from '../services/redisService';
+import { cacheKeys, invalidateCache } from '../middleware/cache';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -212,17 +215,46 @@ router.post('/start', authenticateToken, async (req, res) => {
       { name: 'General Paper', count: 20 }
     ];
 
-    // Use parallel queries for better performance
-    const questionPromises = subjectConfig.map(async ({ name, count }) => {
-      return Question.aggregate([
-        { $match: { subject: name } },
-        { $sample: { size: count } }
-      ]);
-    });
+    // Try to get questions from cache first
+    let questionsResponse: any[] = [];
+    const examQuestionsKey = 'exam:questions:pool';
+    
+    if (redisService.isReady()) {
+      try {
+        const cachedQuestions = await redisService.getJSON<any[]>(examQuestionsKey);
+        if (cachedQuestions && cachedQuestions.length >= 100) {
+          // Use cached questions but still randomize selection
+          const shuffled = [...cachedQuestions].sort(() => 0.5 - Math.random());
+          questionsResponse = shuffled.slice(0, 100);
+          logger.info('Using cached exam questions', { count: questionsResponse.length });
+        }
+      } catch (error) {
+        logger.warn('Failed to get cached questions', { error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
 
-    // Execute all queries in parallel
-    const subjectResults = await Promise.all(questionPromises);
-    const questionsResponse = subjectResults.flat();
+    // If no cached questions or insufficient count, fetch from database
+    if (questionsResponse.length === 0) {
+      logger.info('Fetching fresh questions from database');
+      
+      // Use parallel queries for better performance
+      const questionPromises = subjectConfig.map(async ({ name, count }) => {
+        return Question.aggregate([
+          { $match: { subject: name } },
+          { $sample: { size: count } }
+        ]);
+      });
+
+      // Execute all queries in parallel
+      const subjectResults = await Promise.all(questionPromises);
+      questionsResponse = subjectResults.flat();
+      
+      // Cache the questions for 30 minutes (questions don't change often)
+      if (redisService.isReady() && questionsResponse.length > 0) {
+        redisService.cacheJSON(examQuestionsKey, questionsResponse, 1800) // 30 minutes
+          .catch(error => logger.warn('Failed to cache questions', { error: error.message }));
+      }
+    }
 
     if (questionsResponse.length === 0) {
       return res.status(400).json({

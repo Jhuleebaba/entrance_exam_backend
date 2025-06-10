@@ -5,6 +5,9 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import parseDocument from '../utils/documentParser';
+import { invalidateCache } from '../middleware/cache';
+import redisService from '../services/redisService';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -187,6 +190,14 @@ const processUploadedDocument = async (filePath: string, subject: string) => {
     // Save valid questions to the database
     if (validQuestions.length > 0) {
       await Question.insertMany(validQuestions);
+      
+      // Invalidate question-related caches
+      await invalidateCache.examData();
+      await invalidateCache.questionsBySubject(subject);
+      logger.info('Invalidated question caches after upload', { 
+        subject, 
+        addedCount: validQuestions.length 
+      });
     }
     
     // Optionally remove the file after processing
@@ -311,6 +322,15 @@ router.post('/', auth, admin, async (req, res) => {
     });
 
     await newQuestion.save();
+    
+    // Invalidate question-related caches
+    await invalidateCache.examData();
+    await invalidateCache.questionsBySubject(subject);
+    logger.info('Invalidated question caches after manual addition', { 
+      subject, 
+      questionId: newQuestion._id 
+    });
+    
     console.log('Question added successfully:', newQuestion._id);
     res.status(201).json({
       success: true,
@@ -379,6 +399,14 @@ router.put('/:id', auth, admin, async (req, res) => {
       });
     }
 
+    // Invalidate question-related caches
+    await invalidateCache.examData();
+    await invalidateCache.questionsBySubject(subject);
+    logger.info('Invalidated question caches after update', { 
+      subject, 
+      questionId: req.params.id 
+    });
+    
     console.log('Question updated successfully:', req.params.id);
     res.json({
       success: true,
@@ -408,6 +436,14 @@ router.delete('/:id', auth, admin, async (req, res) => {
       });
     }
 
+    // Invalidate question-related caches
+    await invalidateCache.examData();
+    await invalidateCache.questionsBySubject(deletedQuestion.subject);
+    logger.info('Invalidated question caches after deletion', { 
+      subject: deletedQuestion.subject, 
+      questionId: req.params.id 
+    });
+    
     console.log('Question deleted successfully:', req.params.id);
     res.json({
       success: true,

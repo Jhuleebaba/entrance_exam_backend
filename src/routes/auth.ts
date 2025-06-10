@@ -7,6 +7,9 @@ import { authenticateToken as auth, isAdmin as admin } from '../middleware/auth'
 import archiver from 'archiver';
 import ExamResult from '../models/ExamResult';
 import { JWT_SECRET } from '../config';
+import redisService from '../services/redisService';
+import { cacheKeys } from '../middleware/cache';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -356,6 +359,20 @@ router.get('/exam-settings', async (req, res) => {
   try {
     console.log('[Backend] GET /exam-settings route hit');
     
+    // Try to get settings from cache first
+    const settingsKey = cacheKeys.examSettings();
+    if (redisService.isReady()) {
+      try {
+        const cachedSettings = await redisService.getJSON(settingsKey);
+        if (cachedSettings) {
+          logger.info('Returning cached exam settings');
+          return res.json(cachedSettings);
+        }
+      } catch (error) {
+        logger.warn('Failed to get cached settings', { error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
+    
     // HARDCODED EXAM SETTINGS - No database dependency
     const hardcodedSettings = {
       examDurationMinutes: 120, // 2 hours
@@ -387,6 +404,12 @@ Good luck!`,
         'General Paper': 20
       }
     };
+    
+    // Cache the settings for 1 hour (these rarely change)
+    if (redisService.isReady()) {
+      redisService.cacheJSON(settingsKey, hardcodedSettings, 3600)
+        .catch(error => logger.warn('Failed to cache settings', { error: error.message }));
+    }
     
     console.log('[Backend] Returning hardcoded settings:', hardcodedSettings);
     res.json(hardcodedSettings);

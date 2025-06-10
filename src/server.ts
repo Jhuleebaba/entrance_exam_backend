@@ -14,6 +14,7 @@ import authRoutes from './routes/auth';
 import questionRoutes from './routes/questions';
 import examResultRoutes from './routes/exam-results';
 import examRoutes from './routes/exam';
+import redisService from './services/redisService';
 
 import { errorHandler } from './middleware/errorHandler';
 import logger, { stream } from './utils/logger';
@@ -134,12 +135,14 @@ app.use('/api/exam', examRoutes);
 
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  const redisStats = await redisService.getStats();
   const health = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    redis: redisStats
   };
   logger.info('Health check performed', health);
   res.status(200).json(health);
