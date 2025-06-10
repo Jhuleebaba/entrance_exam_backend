@@ -39,12 +39,12 @@ router.get('/students', auth, admin, async (req, res) => {
     const students = await User.find({ role: 'student' })
       .select('-password -__v');
     
-    // Convert to objects and add computed fullName consistently  
+    // Convert to objects and ensure fullName is always available
     const studentsWithFullName = students.map(student => {
       const studentObj = student.toObject();
       return {
         ...studentObj,
-        fullName: `${student.firstName} ${student.surname}`,
+        fullName: studentObj.fullName || `${student.firstName || ''} ${student.surname || ''}`.trim() || 'Name not available',
         phoneNumber: student.phoneNumber || 'Not provided'
       };
     });
@@ -59,12 +59,12 @@ router.get('/students', auth, admin, async (req, res) => {
       success: true,
       students: studentsWithFullName 
     });
-  } catch (err: any) {
-    console.error('Error fetching students:', err.message);
-    res.status(500).json({
+  } catch (error: any) {
+    console.error('Error fetching students:', error);
+    res.status(500).json({ 
       success: false,
-      message: 'Server error',
-      error: err.message
+      message: 'Error fetching students', 
+      error: error.message 
     });
   }
 });
@@ -478,6 +478,7 @@ router.get('/exam-settings', async (req, res) => {
 router.put('/settings', auth, admin, async (req, res) => {
   try {
     console.log('[Backend] PUT /settings - Request body:', req.body);
+    console.log('[Backend] PUT /settings - User:', req.user);
     
     const {
       examDurationMinutes,
@@ -500,7 +501,31 @@ router.put('/settings', auth, admin, async (req, res) => {
 
     let settings = await Settings.findOne();
     if (!settings) {
-      settings = new Settings();
+      console.log('[Backend] No settings found, creating new one');
+      const now = new Date();
+      const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const twoWeeksFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+      
+      settings = new Settings({
+        examDuration: 120,
+        examStartTime: oneWeekFromNow,
+        examEndTime: twoWeeksFromNow,
+        registrationStartDate: now,
+        registrationEndDate: oneWeekFromNow,
+        examYear: new Date().getFullYear(),
+        examStartDate: oneWeekFromNow,
+        examGroupSize: 10,
+        examGroupIntervalHours: 2,
+        totalExamQuestions: 100,
+        examStartTimeString: '09:00',
+        questionsPerSubject: {
+          Mathematics: 20,
+          English: 20,
+          'Quantitative Reasoning': 20,
+          'Verbal Reasoning': 20,
+          'General Paper': 20
+        }
+      });
     }
 
     // Update fields if provided - handle both examDuration and examDurationMinutes
@@ -512,12 +537,17 @@ router.put('/settings', auth, admin, async (req, res) => {
       // If it's a date, store it in examStartTime (for backwards compatibility)
       if (typeof examStartTime === 'string' && examStartTime.includes(':')) {
         settings.examStartTimeString = examStartTime;
+        console.log('[Backend] Set examStartTimeString to:', examStartTime);
       } else {
         settings.examStartTime = new Date(examStartTime);
+        console.log('[Backend] Set examStartTime to:', new Date(examStartTime));
       }
     }
     if (examEndTime !== undefined) settings.examEndTime = new Date(examEndTime);
-    if (examStartDate !== undefined) settings.examStartDate = new Date(examStartDate);
+    if (examStartDate !== undefined) {
+      settings.examStartDate = new Date(examStartDate);
+      console.log('[Backend] Set examStartDate to:', new Date(examStartDate));
+    }
     if (examGroupSize !== undefined) settings.examGroupSize = examGroupSize;
     if (examGroupIntervalHours !== undefined) settings.examGroupIntervalHours = examGroupIntervalHours;
     if (examReportNextSteps !== undefined) settings.examReportNextSteps = examReportNextSteps;
@@ -531,25 +561,26 @@ router.put('/settings', auth, admin, async (req, res) => {
     // Update questions per subject
     if (questionsPerSubject) {
       settings.questionsPerSubject = {
-        Mathematics: 0,
-        English: 0,
-        'Quantitative Reasoning': 0,
-        'Verbal Reasoning': 0,
-        'General Paper': 0,
+        Mathematics: 20,
+        English: 20,
+        'Quantitative Reasoning': 20,
+        'Verbal Reasoning': 20,
+        'General Paper': 20,
         ...questionsPerSubject
       };
     }
 
-    await settings.save();
-    console.log('[Backend] Settings saved successfully:', settings);
+    const savedSettings = await settings.save();
+    console.log('[Backend] Settings saved successfully');
 
     res.json({
       success: true,
       message: 'Settings updated successfully',
-      settings
+      settings: savedSettings
     });
   } catch (error: any) {
-    console.error('Error updating settings:', error);
+    console.error('[Backend] Error updating settings:', error);
+    console.error('[Backend] Error stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Error updating settings',

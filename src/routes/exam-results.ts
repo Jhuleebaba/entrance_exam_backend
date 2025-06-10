@@ -15,10 +15,23 @@ router.get('/all', authenticateToken, isAdmin, (async (req, res) => {
       .populate('user', 'surname firstName fullName examNumber email phoneNumber sex stateOfOrigin nationality')
       .sort({ createdAt: -1 });
 
+    // Ensure fullName is always available
+    const processedResults = results.map(result => {
+      const resultObj = result.toObject();
+      // Type assertion since we know user is populated
+      const user = resultObj.user as any;
+      if (user && typeof user === 'object') {
+        user.fullName = user.fullName || 
+          `${user.firstName || ''} ${user.surname || ''}`.trim() || 
+          'Name not available';
+      }
+      return resultObj;
+    });
+
     res.json({
       success: true,
-      count: results.length,
-      results
+      count: processedResults.length,
+      results: processedResults
     });
   } catch (error: any) {
     console.error('Error fetching exam results:', error);
@@ -37,10 +50,23 @@ router.get('/', authenticateToken, async (req, res) => {
       .populate('user', 'surname firstName fullName examNumber email phoneNumber sex stateOfOrigin nationality')
       .sort({ createdAt: -1 });
 
+    // Ensure fullName is always available
+    const processedResults = results.map(result => {
+      const resultObj = result.toObject();
+      // Type assertion since we know user is populated
+      const user = resultObj.user as any;
+      if (user && typeof user === 'object') {
+        user.fullName = user.fullName || 
+          `${user.firstName || ''} ${user.surname || ''}`.trim() || 
+          'Name not available';
+      }
+      return resultObj;
+    });
+
     res.json({
       success: true,
-      count: results.length,
-      results
+      count: processedResults.length,
+      results: processedResults
     });
   } catch (error: any) {
     console.error('Error fetching exam results:', error);
