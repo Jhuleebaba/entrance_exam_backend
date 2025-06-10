@@ -107,8 +107,16 @@ router.get('/:id', authenticateToken, async (req, res) => {
       result.examQuestions = new Map(Object.entries(result.examQuestions));
     }
 
-    // Build detailed answers array
+    // Build detailed answers array and calculate subject scores
     const answersArray = [];
+    const subjectScores: { [subject: string]: { correct: number, total: number, percentage: number } } = {};
+    
+    // Initialize subject scores
+    const subjects = ['Mathematics', 'English', 'Verbal Reasoning', 'Quantitative Reasoning', 'General Paper'];
+    subjects.forEach(subject => {
+      subjectScores[subject] = { correct: 0, total: 0, percentage: 0 };
+    });
+    
     if (result.answers && result.examQuestions) {
       console.log('Raw result.answers:', result.answers);
       console.log('Raw result.examQuestions:', result.examQuestions);
@@ -118,6 +126,19 @@ router.get('/:id', authenticateToken, async (req, res) => {
         if (questionDoc) {
           const examQ = result.examQuestions.get(questionId);
           const isCorrect = examQ && selectedAnswer === examQ.correctAnswer;
+          const marks = examQ?.marks || 1;
+          const subject = questionDoc.subject;
+          
+          // Update subject scores
+          if (!subjectScores[subject]) {
+            subjectScores[subject] = { correct: 0, total: 0, percentage: 0 };
+          }
+          
+          subjectScores[subject].total += marks;
+          if (isCorrect) {
+            subjectScores[subject].correct += marks;
+          }
+          
           answersArray.push({
             question: {
               question: questionDoc.question,
@@ -132,13 +153,28 @@ router.get('/:id', authenticateToken, async (req, res) => {
         }
       }
     }
+    
+    // Calculate percentages and cap at 20 marks per subject
+    Object.keys(subjectScores).forEach(subject => {
+      const subjectData = subjectScores[subject];
+      if (subjectData.total > 20) {
+        subjectData.total = 20;
+      }
+      if (subjectData.correct > 20) {
+        subjectData.correct = 20;
+      }
+      subjectData.percentage = subjectData.total > 0 ? (subjectData.correct / subjectData.total) * 100 : 0;
+    });
+    
     console.log('Built answersArray:', answersArray);
+    console.log('Calculated subject scores:', subjectScores);
 
     res.json({
       success: true,
       result: {
         ...result.toObject(),
-        answers: answersArray
+        answers: answersArray,
+        subjectScores
       }
     });
   } catch (error: any) {
@@ -280,16 +316,60 @@ router.post('/:id/submit', authenticateToken, (async (req, res) => {
       });
     }
 
-    // Calculate score using stored exam questions
+    // Calculate score using stored exam questions and build subject-wise breakdown
     let totalScore = 0;
     const answersMap = new Map<string, string>();
+    const subjectScores: { [subject: string]: { correct: number, total: number, percentage: number } } = {};
     
+    // First, get all question details to properly calculate subject scores
+    const questionIds = Array.from(examResult.examQuestions.keys());
+    const questionDocs = await Question.find({ _id: { $in: questionIds } });
+    const questionMap = new Map(questionDocs.map(q => [q._id.toString(), q]));
+    
+    // Initialize subject scores with hardcoded subjects
+    const subjects = ['Mathematics', 'English', 'Verbal Reasoning', 'Quantitative Reasoning', 'General Paper'];
+    subjects.forEach(subject => {
+      subjectScores[subject] = { correct: 0, total: 0, percentage: 0 };
+    });
+    
+    // Calculate scores
     Object.entries(answers).forEach(([questionId, answer]) => {
       answersMap.set(questionId, answer);
       const questionData = examResult.examQuestions.get(questionId);
-      if (questionData && answer === questionData.correctAnswer) {
-        totalScore += questionData.marks;
+      const questionDoc = questionMap.get(questionId);
+      
+      if (questionData && questionDoc) {
+        const subject = questionDoc.subject;
+        const marks = questionData.marks || 1;
+        
+        // Initialize subject if not already done
+        if (!subjectScores[subject]) {
+          subjectScores[subject] = { correct: 0, total: 0, percentage: 0 };
+        }
+        
+        subjectScores[subject].total += marks;
+        
+        if (answer === questionData.correctAnswer) {
+          subjectScores[subject].correct += marks;
+          totalScore += marks;
+        }
       }
+    });
+    
+    // Calculate percentages for each subject and ensure no subject exceeds 20 marks
+    Object.keys(subjectScores).forEach(subject => {
+      const subjectData = subjectScores[subject];
+      // Ensure no subject has more than 20 total marks (20 questions × 1 mark each)
+      if (subjectData.total > 20) {
+        console.warn(`Warning: Subject ${subject} has ${subjectData.total} total marks, capping at 20`);
+        subjectData.total = 20;
+      }
+      if (subjectData.correct > 20) {
+        console.warn(`Warning: Subject ${subject} has ${subjectData.correct} correct marks, capping at 20`);
+        subjectData.correct = 20;
+      }
+      
+      subjectData.percentage = subjectData.total > 0 ? (subjectData.correct / subjectData.total) * 100 : 0;
     });
 
     // Update exam result
@@ -298,17 +378,24 @@ router.post('/:id/submit', authenticateToken, (async (req, res) => {
     examResult.totalQuestions = examResult.examQuestions.size;
     examResult.completed = true;
     examResult.endTime = new Date();
+    
+    // Store subject scores in a new field (we might need to add this to the model)
+    (examResult as any).subjectScores = subjectScores;
 
     await examResult.save();
 
     // Calculate percentage based on total obtainable marks
     const percentage = (totalScore / examResult.totalObtainableMarks) * 100;
+    
+    console.log('Calculated subject scores:', subjectScores);
+    console.log('Total score:', totalScore, 'out of', examResult.totalObtainableMarks);
 
     res.json({
       success: true,
       message: 'Exam submitted successfully',
       result: {
         ...examResult.toObject(),
+        subjectScores,
         percentage: percentage.toFixed(1)
       }
     });

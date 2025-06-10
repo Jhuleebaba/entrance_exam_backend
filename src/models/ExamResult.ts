@@ -5,6 +5,12 @@ interface ExamQuestion {
   correctAnswer: string;
 }
 
+interface SubjectScore {
+  correct: number;
+  total: number;
+  percentage: number;
+}
+
 export interface IExamResult extends mongoose.Document {
   user: mongoose.Types.ObjectId;
   answers: Map<string, string>;
@@ -12,6 +18,7 @@ export interface IExamResult extends mongoose.Document {
   totalScore: number;
   totalQuestions: number;
   totalObtainableMarks: number;
+  subjectScores: { [subject: string]: SubjectScore };
   startTime: Date;
   endTime?: Date;
   completed: boolean;
@@ -49,6 +56,15 @@ const examResultSchema = new mongoose.Schema({
   totalObtainableMarks: {
     type: Number,
     required: true
+  },
+  subjectScores: {
+    type: Map,
+    of: {
+      correct: Number,
+      total: Number,
+      percentage: Number
+    },
+    default: () => new Map()
   },
   startTime: {
     type: Date,
