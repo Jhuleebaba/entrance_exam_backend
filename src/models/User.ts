@@ -1,6 +1,6 @@
 import mongoose, { CallbackError } from 'mongoose';
 import bcrypt from 'bcryptjs';
-import Settings from './Settings';
+
 
 export interface IUser extends mongoose.Document {
   examNumber: string;
@@ -132,51 +132,36 @@ userSchema.pre('save', async function (next) {
 userSchema.pre('save', async function (next) {
   try {
     if (this.isNew && this.role === 'student') {
-      // Get settings
-      const settings = await Settings.findOne();
+      // HARDCODED EXAM SETTINGS - No more database dependency
+      const EXAM_START_DATE = '2025-01-15'; // Change this date as needed
+      const EXAM_START_TIME = '09:00'; // 9:00 AM
+      const EXAM_GROUP_SIZE = 10; // Students per group
+      const EXAM_GROUP_INTERVAL_HOURS = 2; // Hours between groups
 
-      if (settings) {
-        // Get the count of all students to determine the group
-        const User = mongoose.model('User');
-        const studentCount = await User.countDocuments({ role: 'student' });
+      // Get the count of all students to determine the group
+      const User = mongoose.model('User');
+      const studentCount = await User.countDocuments({ role: 'student' });
 
-        // Assign to exam group (0-indexed)
-        const examGroup = Math.floor(studentCount / settings.examGroupSize);
-        this.examGroup = examGroup;
+      // Assign to exam group (0-indexed)
+      const examGroup = Math.floor(studentCount / EXAM_GROUP_SIZE);
+      this.examGroup = examGroup;
 
-        // Calculate the exam date and time for this group
-        if (settings.examStartDate) {
-          // Create a new date from the exam start date
-          const examDateTime = new Date(settings.examStartDate);
-          
-          // If there's a start time string, parse it and set it
-          const timeString = settings.examStartTimeString || '09:00'; // Default to 9:00 AM
-          if (timeString.includes(':')) {
-            const [hours, minutes] = timeString.split(':').map(Number);
-            examDateTime.setHours(hours, minutes, 0, 0);
-          } else {
-            // Default to 9:00 AM if time format is invalid
-            examDateTime.setHours(9, 0, 0, 0);
-          }
-          
-          // Add hours for the group interval
-          examDateTime.setHours(
-            examDateTime.getHours() + (examGroup * settings.examGroupIntervalHours)
-          );
-          
-          this.examDateTime = examDateTime;
-          console.log(`Assigned student to group ${examGroup}, exam time: ${examDateTime}`);
-        } else {
-          console.warn('No exam start date found in settings');
-        }
-      } else {
-        console.warn('No settings document found');
-      }
+      // Calculate the exam date and time for this group
+      const examDateTime = new Date(EXAM_START_DATE + 'T' + EXAM_START_TIME + ':00.000Z');
+      
+      // Add hours for the group interval
+      examDateTime.setHours(
+        examDateTime.getHours() + (examGroup * EXAM_GROUP_INTERVAL_HOURS)
+      );
+      
+      this.examDateTime = examDateTime;
+
+      console.log(`Student ${this.firstName} ${this.surname} assigned to group ${examGroup} with exam time: ${examDateTime}`);
     }
     next();
   } catch (error) {
-    console.error('Error in exam scheduling pre-save hook:', error);
-    next(error as CallbackError);
+    console.error('Error in user pre-save hook:', error);
+    next(error);
   }
 });
 

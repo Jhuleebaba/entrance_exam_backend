@@ -14,7 +14,7 @@ import authRoutes from './routes/auth';
 import questionRoutes from './routes/questions';
 import examResultRoutes from './routes/exam-results';
 import examRoutes from './routes/exam';
-import settingsRoutes from './routes/settings';
+
 import { errorHandler } from './middleware/errorHandler';
 import logger, { stream } from './utils/logger';
 
@@ -131,7 +131,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/exam-results', examResultRoutes);
 app.use('/api/exam', examRoutes);
-app.use('/api/settings', settingsRoutes);
+
 
 // Health check endpoint
 app.get('/health', (req, res) => {

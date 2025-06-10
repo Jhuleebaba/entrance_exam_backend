@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import User from '../models/User';
 import { authenticateToken as auth, isAdmin as admin } from '../middleware/auth';
-import Settings from '../models/Settings';
+
 import archiver from 'archiver';
 import ExamResult from '../models/ExamResult';
 import { JWT_SECRET } from '../config';
@@ -350,240 +350,51 @@ router.post('/create-admin', async (req, res) => {
   }
 });
 
-// Get settings
-router.get('/settings', auth, admin, async (req, res) => {
-  try {
-    let settings = await Settings.findOne();
-    if (!settings) {
-      // Create default settings if none exist
-      const now = new Date();
-      const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-      const twoWeeksFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-      
-      settings = new Settings({
-        examDuration: 120,
-        examStartTime: oneWeekFromNow,
-        examEndTime: twoWeeksFromNow,
-        registrationStartDate: now,
-        registrationEndDate: oneWeekFromNow,
-        examYear: new Date().getFullYear(),
-        examStartDate: oneWeekFromNow,
-        examGroupSize: 10,
-        examGroupIntervalHours: 2,
-        totalExamQuestions: 100,
-        questionsPerSubject: {
-          Mathematics: 20,
-          English: 20,
-          'Quantitative Reasoning': 20,
-          'Verbal Reasoning': 20,
-          'General Paper': 20
-        }
-      });
-      await settings.save();
-    }
-
-    res.json({
-      success: true,
-      settings: {
-        examDurationMinutes: settings.examDuration, // Map examDuration to examDurationMinutes
-        examDuration: settings.examDuration,
-        examInstructions: settings.examInstructions,
-        examStartTime: settings.examStartTimeString || '09:00', // Return time string for frontend
-        examStartTimeDate: settings.examStartTime, // Keep original for backwards compatibility
-        examEndTime: settings.examEndTime,
-        examStartDate: settings.examStartDate,
-        examGroupSize: settings.examGroupSize,
-        examGroupIntervalHours: settings.examGroupIntervalHours,
-        examReportNextSteps: settings.examReportNextSteps,
-        examSlipInstructions: settings.examSlipInstructions,
-        examVenue: settings.examVenue,
-        totalExamQuestions: settings.totalExamQuestions,
-        registrationStartDate: settings.registrationStartDate,
-        registrationEndDate: settings.registrationEndDate,
-        examYear: settings.examYear,
-        questionsPerSubject: settings.questionsPerSubject
-      }
-    });
-  } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching settings',
-      error: error.message
-    });
-  }
-});
 
 // GET exam settings for students (public)
 router.get('/exam-settings', async (req, res) => {
   try {
     console.log('[Backend] GET /exam-settings route hit');
-    // Find settings - there should only be one document
-    let settings = await Settings.findOne({});
     
-    // If no settings exist yet, create default settings
-    if (!settings) {
-      console.log('[Backend] No settings found, creating defaults');
-      const now = new Date();
-      const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-      const twoWeeksFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-      
-      settings = new Settings({
-        examDuration: 120,
-        examStartTime: oneWeekFromNow,
-        examEndTime: twoWeeksFromNow,
-        registrationStartDate: now,
-        registrationEndDate: oneWeekFromNow,
-        examYear: new Date().getFullYear(),
-        examStartDate: oneWeekFromNow,
-        examGroupSize: 10,
-        examGroupIntervalHours: 2,
-        totalExamQuestions: 100,
-        questionsPerSubject: {
-          Mathematics: 20,
-          English: 20,
-          'Quantitative Reasoning': 20,
-          'Verbal Reasoning': 20,
-          'General Paper': 20
-        }
-      });
-      await settings.save();
-    }
-    
-    // Return only the fields students need to see
-    const publicSettings = {
-      examDurationMinutes: settings.examDuration, // Map examDuration to examDurationMinutes for frontend
-      examDuration: settings.examDuration,
-      examInstructions: settings.examInstructions,
-      examStartTime: settings.examStartTime,
-      examEndTime: settings.examEndTime,
-      registrationStartDate: settings.registrationStartDate,
-      registrationEndDate: settings.registrationEndDate,
-      examYear: settings.examYear,
-      questionsPerSubject: settings.questionsPerSubject
+    // HARDCODED EXAM SETTINGS - No database dependency
+    const hardcodedSettings = {
+      examDurationMinutes: 120, // 2 hours
+      examDuration: 120,
+      examInstructions: `Welcome to the Goodly Heritage School Entrance Examination.
+
+IMPORTANT INSTRUCTIONS:
+
+1. You have 120 minutes to complete this exam.
+2. The exam consists of multiple-choice questions covering Mathematics, English, Verbal Reasoning, Quantitative Reasoning, and General Paper.
+3. Read each question carefully before selecting your answer.
+4. You may navigate between questions using the Next and Previous buttons.
+5. Use the "Mark for Review" feature if you want to come back to a question later.
+6. Click "Submit Exam" when you have completed all questions.
+7. Do not refresh the page or navigate away during the exam as this may result in lost answers.
+8. If you experience any technical issues, contact the exam supervisor immediately.
+
+Good luck!`,
+      examStartTime: new Date('2025-07-12T09:00:00.000Z'),
+      examEndTime: new Date('2025-07-12T11:00:00.000Z'),
+      registrationStartDate: new Date('2025-06-28T00:00:00.000Z'),
+      registrationEndDate: new Date('2025-07-10T23:59:59.000Z'),
+      examYear: 2025,
+      questionsPerSubject: {
+        Mathematics: 20,
+        English: 20,
+        'Quantitative Reasoning': 20,
+        'Verbal Reasoning': 20,
+        'General Paper': 20
+      }
     };
     
-    console.log('[Backend] Returning public settings:', publicSettings);
-    res.json(publicSettings);
+    console.log('[Backend] Returning hardcoded settings:', hardcodedSettings);
+    res.json(hardcodedSettings);
   } catch (error: any) {
     console.error('[Backend] Error fetching exam settings:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching exam settings',
-      error: error.message
-    });
-  }
-});
-
-// Update settings
-router.put('/settings', auth, admin, async (req, res) => {
-  try {
-    console.log('[Backend] PUT /settings - Request body:', req.body);
-    console.log('[Backend] PUT /settings - User:', req.user);
-    
-    const {
-      examDurationMinutes,
-      examDuration,
-      examInstructions,
-      examStartTime,
-      examEndTime,
-      examStartDate,
-      examGroupSize,
-      examGroupIntervalHours,
-      examReportNextSteps,
-      examSlipInstructions,
-      examVenue,
-      totalExamQuestions,
-      registrationStartDate,
-      registrationEndDate,
-      examYear,
-      questionsPerSubject
-    } = req.body;
-
-    let settings = await Settings.findOne();
-    if (!settings) {
-      console.log('[Backend] No settings found, creating new one');
-      const now = new Date();
-      const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-      const twoWeeksFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-      
-      settings = new Settings({
-        examDuration: 120,
-        examStartTime: oneWeekFromNow,
-        examEndTime: twoWeeksFromNow,
-        registrationStartDate: now,
-        registrationEndDate: oneWeekFromNow,
-        examYear: new Date().getFullYear(),
-        examStartDate: oneWeekFromNow,
-        examGroupSize: 10,
-        examGroupIntervalHours: 2,
-        totalExamQuestions: 100,
-        examStartTimeString: '09:00',
-        questionsPerSubject: {
-          Mathematics: 20,
-          English: 20,
-          'Quantitative Reasoning': 20,
-          'Verbal Reasoning': 20,
-          'General Paper': 20
-        }
-      });
-    }
-
-    // Update fields if provided - handle both examDuration and examDurationMinutes
-    if (examDurationMinutes !== undefined) settings.examDuration = examDurationMinutes;
-    if (examDuration !== undefined) settings.examDuration = examDuration;
-    if (examInstructions !== undefined) settings.examInstructions = examInstructions;
-    if (examStartTime !== undefined) {
-      // Handle examStartTime - if it's a time string like "09:00", store it in examStartTimeString
-      // If it's a date, store it in examStartTime (for backwards compatibility)
-      if (typeof examStartTime === 'string' && examStartTime.includes(':')) {
-        settings.examStartTimeString = examStartTime;
-        console.log('[Backend] Set examStartTimeString to:', examStartTime);
-      } else {
-        settings.examStartTime = new Date(examStartTime);
-        console.log('[Backend] Set examStartTime to:', new Date(examStartTime));
-      }
-    }
-    if (examEndTime !== undefined) settings.examEndTime = new Date(examEndTime);
-    if (examStartDate !== undefined) {
-      settings.examStartDate = new Date(examStartDate);
-      console.log('[Backend] Set examStartDate to:', new Date(examStartDate));
-    }
-    if (examGroupSize !== undefined) settings.examGroupSize = examGroupSize;
-    if (examGroupIntervalHours !== undefined) settings.examGroupIntervalHours = examGroupIntervalHours;
-    if (examReportNextSteps !== undefined) settings.examReportNextSteps = examReportNextSteps;
-    if (examSlipInstructions !== undefined) settings.examSlipInstructions = examSlipInstructions;
-    if (examVenue !== undefined) settings.examVenue = examVenue;
-    if (totalExamQuestions !== undefined) settings.totalExamQuestions = totalExamQuestions;
-    if (registrationStartDate !== undefined) settings.registrationStartDate = new Date(registrationStartDate);
-    if (registrationEndDate !== undefined) settings.registrationEndDate = new Date(registrationEndDate);
-    if (examYear !== undefined) settings.examYear = examYear;
-
-    // Update questions per subject
-    if (questionsPerSubject) {
-      settings.questionsPerSubject = {
-        Mathematics: 20,
-        English: 20,
-        'Quantitative Reasoning': 20,
-        'Verbal Reasoning': 20,
-        'General Paper': 20,
-        ...questionsPerSubject
-      };
-    }
-
-    const savedSettings = await settings.save();
-    console.log('[Backend] Settings saved successfully');
-
-    res.json({
-      success: true,
-      message: 'Settings updated successfully',
-      settings: savedSettings
-    });
-  } catch (error: any) {
-    console.error('[Backend] Error updating settings:', error);
-    console.error('[Backend] Error stack:', error.stack);
-    res.status(500).json({
-      success: false,
-      message: 'Error updating settings',
       error: error.message
     });
   }
