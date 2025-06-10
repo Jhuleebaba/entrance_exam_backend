@@ -28,8 +28,8 @@ class RedisService {
         maxRetriesPerRequest: 3,
         connectTimeout: 60000, // 60 seconds
         commandTimeout: 10000,  // 10 seconds
-        enableOfflineQueue: false,
-        lazyConnect: false,
+        enableOfflineQueue: true, // Allow command buffering during connection
+        lazyConnect: true, // Don't connect immediately
         keepAlive: 30000,
         family: 4,
         retryDelayOnFailover: 200,
@@ -61,8 +61,8 @@ class RedisService {
       // Set up event handlers
       this.setupEventHandlers();
 
-      // Test the connection
-      await this.testConnection();
+      // Connect and test after ready event
+      await this.client.connect();
       
     } catch (error) {
       logger.error('Failed to initialize Redis:', { 
@@ -91,10 +91,19 @@ class RedisService {
       logger.info('Redis connection established');
     });
 
-    this.client.on('ready', () => {
+    this.client.on('ready', async () => {
       this.isConnected = true;
       this.connectionAttempts = 0; // Reset on successful connection
       logger.info('Redis is ready for commands');
+      
+      // Test connection now that it's ready
+      try {
+        await this.testConnection();
+      } catch (error) {
+        logger.error('Redis connection test failed after ready event:', { 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+      }
     });
 
     this.client.on('error', (error) => {
@@ -281,6 +290,7 @@ class RedisService {
   }
 
   isReady(): boolean {
+    if (process.env.DISABLE_REDIS === 'true') return false;
     return this.isConnected && this.client !== null;
   }
 
