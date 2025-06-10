@@ -376,8 +376,8 @@ IMPORTANT INSTRUCTIONS:
 Good luck!`,
       examStartTime: new Date('2025-07-12T09:00:00.000Z'),
       examEndTime: new Date('2025-07-12T11:00:00.000Z'),
-      registrationStartDate: new Date('2025-06-28T00:00:00.000Z'),
-      registrationEndDate: new Date('2025-07-10T23:59:59.000Z'),
+      registrationStartDate: new Date('2025-01-15T00:00:00.000Z'),
+      registrationEndDate: new Date('2025-07-05T23:59:59.000Z'),
       examYear: 2025,
       questionsPerSubject: {
         Mathematics: 20,

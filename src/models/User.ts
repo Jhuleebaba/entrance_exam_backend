@@ -19,7 +19,6 @@ export interface IUser extends mongoose.Document {
   examGroup: number;
   examDateTime: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
-  updateExamDateTime(settings: any): Promise<void>;
   formatExamTime(): string | null;
 }
 
@@ -133,8 +132,8 @@ userSchema.pre('save', async function (next) {
   try {
     if (this.isNew && this.role === 'student') {
       // HARDCODED EXAM SETTINGS - No more database dependency
-      const EXAM_START_DATE = '2025-01-15'; // Change this date as needed
-      const EXAM_START_TIME = '09:00'; // 9:00 AM
+      const EXAM_START_DATE = '2025-07-12'; // Match auth.ts date: July 12, 2025
+      const EXAM_START_TIME = '09:00'; // Match auth.ts time: 9:00 AM
       const EXAM_GROUP_SIZE = 10; // Students per group
       const EXAM_GROUP_INTERVAL_HOURS = 2; // Hours between groups
 
@@ -149,14 +148,17 @@ userSchema.pre('save', async function (next) {
       // Calculate the exam date and time for this group
       const examDateTime = new Date(EXAM_START_DATE + 'T' + EXAM_START_TIME + ':00.000Z');
       
-      // Add hours for the group interval
+      // Add hours for the group interval (each group gets a different time slot)
       examDateTime.setHours(
         examDateTime.getHours() + (examGroup * EXAM_GROUP_INTERVAL_HOURS)
       );
       
       this.examDateTime = examDateTime;
 
-      console.log(`Student ${this.firstName} ${this.surname} assigned to group ${examGroup} with exam time: ${examDateTime}`);
+      console.log(`Student ${this.firstName} ${this.surname} assigned to:`);
+      console.log(`- Group: ${examGroup}`);
+      console.log(`- Exam Date/Time: ${examDateTime.toISOString()}`);
+      console.log(`- Local Time: ${examDateTime.toLocaleString()}`);
     }
     next();
   } catch (error) {
@@ -184,18 +186,6 @@ userSchema.methods.comparePassword = async function (candidatePassword: string):
     return await bcrypt.compare(candidatePassword, this.password);
   } catch (error) {
     throw error;
-  }
-};
-
-// Update the examDateTime based on settings
-userSchema.methods.updateExamDateTime = async function(settings: any) {
-  if (this.examGroup && settings.examStartTime) {
-    const examDate = new Date(settings.examStartTime);
-    const groupIndex = parseInt(this.examGroup.replace(/[^0-9]/g, '')) - 1;
-    const hoursToAdd = groupIndex * (settings.examGroupIntervalHours || 2);
-    
-    examDate.setHours(examDate.getHours() + hoursToAdd);
-    this.examDateTime = examDate;
   }
 };
 
