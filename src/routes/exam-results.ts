@@ -132,14 +132,16 @@ router.get('/:id', authenticateToken, async (req, res) => {
           const marks = examQ?.marks || 1;
           const subject = questionDoc.subject;
           
-          // Update subject scores
+          // Update subject scores - count questions, not marks
           if (!subjectScores[subject]) {
             subjectScores[subject] = { correct: 0, total: 0, percentage: 0 };
           }
           
-          subjectScores[subject].total += marks;
+          // Count total questions attempted for this subject
+          subjectScores[subject].total += 1;
           if (isCorrect) {
-            subjectScores[subject].correct += marks;
+            // Count correct questions for this subject
+            subjectScores[subject].correct += 1;
           }
           
           answersArray.push({
@@ -157,13 +159,16 @@ router.get('/:id', authenticateToken, async (req, res) => {
       }
     }
     
-    // Calculate percentages and cap at 20 marks per subject
+    // Calculate percentages and cap at 20 questions per subject
     Object.keys(subjectScores).forEach(subject => {
       const subjectData = subjectScores[subject];
+      // Ensure no subject has more than 20 total questions (maximum per subject)
       if (subjectData.total > 20) {
+        console.warn(`Warning: Subject ${subject} has ${subjectData.total} total questions, capping at 20`);
         subjectData.total = 20;
       }
       if (subjectData.correct > 20) {
+        console.warn(`Warning: Subject ${subject} has ${subjectData.correct} correct questions, capping at 20`);
         subjectData.correct = 20;
       }
       subjectData.percentage = subjectData.total > 0 ? (subjectData.correct / subjectData.total) * 100 : 0;
@@ -379,25 +384,27 @@ router.post('/:id/submit', authenticateToken, (async (req, res) => {
           subjectScores[subject] = { correct: 0, total: 0, percentage: 0 };
         }
         
-        subjectScores[subject].total += marks;
+        // Count total questions attempted for this subject
+        subjectScores[subject].total += 1;
         
         if (answer === questionData.correctAnswer) {
-          subjectScores[subject].correct += marks;
+          // Count correct questions for this subject
+          subjectScores[subject].correct += 1;
           totalScore += marks;
         }
       }
     });
     
-    // Calculate percentages for each subject and ensure no subject exceeds 20 marks
+    // Calculate percentages for each subject and ensure no subject exceeds 20 questions
     Object.keys(subjectScores).forEach(subject => {
       const subjectData = subjectScores[subject];
-      // Ensure no subject has more than 20 total marks (20 questions × 1 mark each)
+      // Ensure no subject has more than 20 total questions (20 questions per subject)
       if (subjectData.total > 20) {
-        console.warn(`Warning: Subject ${subject} has ${subjectData.total} total marks, capping at 20`);
+        console.warn(`Warning: Subject ${subject} has ${subjectData.total} total questions, capping at 20`);
         subjectData.total = 20;
       }
       if (subjectData.correct > 20) {
-        console.warn(`Warning: Subject ${subject} has ${subjectData.correct} correct marks, capping at 20`);
+        console.warn(`Warning: Subject ${subject} has ${subjectData.correct} correct questions, capping at 20`);
         subjectData.correct = 20;
       }
       
