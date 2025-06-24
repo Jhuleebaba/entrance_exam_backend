@@ -544,4 +544,37 @@ router.post('/admin-reset/:userId', authenticateToken, async (req: Request, res:
   }
 });
 
+// Admin clear all incomplete exams endpoint
+router.post('/admin-clear-incomplete', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    // Check if the requesting user is an admin
+    const requestingUser = req.user;
+    if (!requestingUser || requestingUser.role !== 'admin') {
+      return res.status(403).json({ message: 'Unauthorized: Admin access required' });
+    }
+
+    // Find and delete all incomplete exam results
+    const result = await ExamResult.deleteMany({
+      'completed': false
+    });
+
+    logger.info('Admin cleared incomplete exams', {
+      admin: requestingUser.email,
+      deletedCount: result.deletedCount
+    });
+
+    return res.json({ 
+      success: true, 
+      message: `Successfully cleared ${result.deletedCount} incomplete exam(s)`,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('Error clearing incomplete exams:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Error clearing incomplete exams' 
+    });
+  }
+});
+
 export default router; 
