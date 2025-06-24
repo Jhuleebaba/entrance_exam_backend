@@ -559,7 +559,7 @@ router.post('/admin-clear-incomplete', authenticateToken, async (req: Request, r
     });
 
     logger.info('Admin cleared incomplete exams', {
-      admin: requestingUser.email,
+      admin: requestingUser.id,
       deletedCount: result.deletedCount
     });
 
