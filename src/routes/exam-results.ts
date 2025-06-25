@@ -355,6 +355,228 @@ router.post('/start', authenticateToken, async (req, res) => {
   }
 });
 
+// Prepare exam questions (no exam record created until student starts)
+router.post('/prepare', authenticateToken, async (req, res) => {
+  try {
+    // Check if student has an ongoing exam
+    const ongoingExam = await ExamResult.findOne({
+      user: req.user?.id,
+      completed: false
+    });
+
+    if (ongoingExam) {
+      // Check if the ongoing exam is older than 3 hours (auto-expire)
+      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      if (ongoingExam.startTime < threeHoursAgo) {
+        // Auto-delete expired incomplete exam
+        await ExamResult.findByIdAndDelete(ongoingExam._id);
+        logger.info('Auto-deleted expired incomplete exam', {
+          userId: req.user?.id,
+          examId: ongoingExam._id,
+          startTime: ongoingExam.startTime
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'You already have an ongoing exam'
+        });
+      }
+    }
+
+    // Get exam questions efficiently using the optimized questions endpoint logic
+    const subjectConfig = [
+      { name: 'Mathematics', count: 20 },
+      { name: 'English', count: 20 },
+      { name: 'Verbal Reasoning', count: 20 },
+      { name: 'Quantitative Reasoning', count: 20 },
+      { name: 'General Paper', count: 20 }
+    ];
+
+    // Try to get questions from cache first
+    let questionsResponse: any[] = [];
+    const examQuestionsKey = 'exam:questions:pool';
+    
+    if (redisService.isReady()) {
+      try {
+        const cachedQuestions = await redisService.getJSON<any[]>(examQuestionsKey);
+        if (cachedQuestions && cachedQuestions.length >= 100) {
+          // Use cached questions but still randomize selection
+          const shuffled = [...cachedQuestions].sort(() => 0.5 - Math.random());
+          questionsResponse = shuffled.slice(0, 100);
+          logger.info('Using cached exam questions', { count: questionsResponse.length });
+        }
+      } catch (error) {
+        logger.warn('Failed to get cached questions', { error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
+
+    // If no cached questions or insufficient count, fetch from database
+    if (questionsResponse.length === 0) {
+      logger.info('Fetching fresh questions from database');
+      
+      // Use parallel queries for better performance
+      const questionPromises = subjectConfig.map(async ({ name, count }) => {
+        return Question.aggregate([
+          { $match: { subject: name } },
+          { $sample: { size: count } }
+        ]);
+      });
+
+      // Execute all queries in parallel
+      const subjectResults = await Promise.all(questionPromises);
+      questionsResponse = subjectResults.flat();
+      
+      // Cache the questions for 30 minutes (questions don't change often)
+      if (redisService.isReady() && questionsResponse.length > 0) {
+        redisService.cacheJSON(examQuestionsKey, questionsResponse, 1800) // 30 minutes
+          .catch(error => logger.warn('Failed to cache questions', { error: error.message }));
+      }
+    }
+
+    if (questionsResponse.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No questions available for exam'
+      });
+    }
+
+    // Calculate total obtainable marks for these specific questions
+    const totalObtainableMarks = questionsResponse.reduce((total, q) => total + (q.marks || 1), 0);
+
+    // Prepare questions for student (without correct answers)
+    const questionsForStudent = questionsResponse.map(q => ({
+      _id: q._id,
+      question: q.question,
+      options: q.options,
+      marks: q.marks || 1,
+      subject: q.subject
+    }));
+
+    // Store question data temporarily in cache for when student actually starts exam
+    const tempExamKey = `temp_exam:${req.user?.id}`;
+    const examData = {
+      questions: questionsResponse,
+      totalObtainableMarks,
+      timestamp: Date.now()
+    };
+
+    if (redisService.isReady()) {
+      await redisService.cacheJSON(tempExamKey, examData, 3600); // 1 hour TTL
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Questions prepared successfully',
+      questions: questionsForStudent,
+      totalQuestions: questionsResponse.length,
+      totalObtainableMarks
+    });
+  } catch (error: any) {
+    console.error('Error preparing exam:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error preparing exam',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Actually start the exam (create exam record)
+router.post('/begin', authenticateToken, async (req, res) => {
+  try {
+    // Check if student has an ongoing exam first
+    const ongoingExam = await ExamResult.findOne({
+      user: req.user?.id,
+      completed: false
+    });
+
+    if (ongoingExam) {
+      return res.status(400).json({
+        success: false,
+        message: 'You already have an ongoing exam'
+      });
+    }
+
+    // Get exam data from temporary cache
+    const tempExamKey = `temp_exam:${req.user?.id}`;
+    let examData: any = null;
+
+    if (redisService.isReady()) {
+      try {
+        examData = await redisService.getJSON(tempExamKey);
+      } catch (error) {
+        logger.warn('Failed to get temp exam data', { error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
+
+    if (!examData || !examData.questions || examData.questions.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No exam questions prepared. Please refresh and try again.'
+      });
+    }
+
+    // Check if exam data is too old (more than 1 hour)
+    const oneHourAgo = Date.now() - 3600000;
+    if (examData.timestamp < oneHourAgo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Exam preparation expired. Please refresh and try again.'
+      });
+    }
+
+    // Create a Map for exam questions (store answers for grading)
+    const examQuestions = new Map();
+    examData.questions.forEach((q: any) => {
+      examQuestions.set(q._id.toString(), {
+        marks: q.marks || 1,
+        correctAnswer: q.correctAnswer
+      });
+    });
+
+    // Create the exam result record
+    const result = new ExamResult({
+      user: req.user?.id,
+      startTime: new Date(),
+      completed: false,
+      answers: new Map(),
+      totalScore: 0,
+      totalQuestions: examData.questions.length,
+      totalObtainableMarks: examData.totalObtainableMarks,
+      examQuestions
+    });
+
+    await result.save();
+
+    // Clean up temporary exam data
+    if (redisService.isReady()) {
+      redisService.del(tempExamKey).catch(error => 
+        logger.warn('Failed to clean temp exam data', { error: error.message })
+      );
+    }
+
+    logger.info('Exam started successfully', {
+      userId: req.user?.id,
+      examId: result._id,
+      questionCount: examData.questions.length
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Exam started successfully',
+      examId: result._id,
+      startTime: result.startTime
+    });
+  } catch (error: any) {
+    console.error('Error beginning exam:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error starting exam',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 // Submit exam result
 router.post('/:id/submit', authenticateToken, (async (req, res) => {
   try {
