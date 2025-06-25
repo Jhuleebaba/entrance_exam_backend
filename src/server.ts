@@ -116,6 +116,25 @@ const connectDB = async () => {
         stack: error instanceof Error ? error.stack : undefined
       });
     }
+
+    // Clean up incomplete exams older than 2 hours on startup
+    try {
+      const ExamResult = mongoose.model('ExamResult');
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const cleanupResult = await ExamResult.deleteMany({
+        completed: false,
+        startTime: { $lt: twoHoursAgo }
+      });
+      if (cleanupResult.deletedCount > 0) {
+        logger.info('Cleaned up old incomplete exams on startup', {
+          deletedCount: cleanupResult.deletedCount
+        });
+      }
+    } catch (error) {
+      logger.warn('Error cleaning up incomplete exams on startup:', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
   } catch (error) {
     logger.error('MongoDB connection error:', { 
       error: error instanceof Error ? error.message : 'Unknown error',

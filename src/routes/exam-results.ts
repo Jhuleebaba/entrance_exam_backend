@@ -205,10 +205,22 @@ router.post('/start', authenticateToken, async (req, res) => {
     });
 
     if (ongoingExam) {
-      return res.status(400).json({
-        success: false,
-        message: 'You already have an ongoing exam'
-      });
+      // Check if the ongoing exam is older than 3 hours (auto-expire)
+      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      if (ongoingExam.startTime < threeHoursAgo) {
+        // Auto-delete expired incomplete exam
+        await ExamResult.findByIdAndDelete(ongoingExam._id);
+        logger.info('Auto-deleted expired incomplete exam', {
+          userId: req.user?.id,
+          examId: ongoingExam._id,
+          startTime: ongoingExam.startTime
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'You already have an ongoing exam'
+        });
+      }
     }
 
     // Get exam questions efficiently using the optimized questions endpoint logic
@@ -318,6 +330,23 @@ router.post('/start', authenticateToken, async (req, res) => {
     });
   } catch (error: any) {
     console.error('Error starting exam:', error);
+    
+    // If exam creation failed but we created a record, clean it up
+    try {
+      if (req.user?.id) {
+        await ExamResult.deleteMany({
+          user: req.user.id,
+          completed: false,
+          startTime: { $gte: new Date(Date.now() - 60000) } // Last minute
+        });
+        logger.info('Cleaned up failed exam attempt', { userId: req.user.id });
+      }
+    } catch (cleanupError) {
+      logger.warn('Failed to cleanup incomplete exam', { 
+        error: cleanupError instanceof Error ? cleanupError.message : 'Unknown error' 
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Error starting exam',
