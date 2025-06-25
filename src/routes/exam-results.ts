@@ -11,6 +11,30 @@ import logger from '../utils/logger';
 
 const router = express.Router();
 
+// Helper function to check and handle ongoing exams
+async function checkAndHandleOngoingExam(userId: string): Promise<{ hasOngoing: boolean; message?: string }> {
+  const ongoingExam = await ExamResult.findOne({
+    user: userId,
+    completed: false
+  });
+
+  if (ongoingExam) {
+    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    if (ongoingExam.startTime < threeHoursAgo) {
+      await ExamResult.findByIdAndDelete(ongoingExam._id);
+      logger.info('Auto-deleted expired incomplete exam', {
+        userId,
+        examId: ongoingExam._id,
+        startTime: ongoingExam.startTime
+      });
+      return { hasOngoing: false };
+    }
+    return { hasOngoing: true, message: 'You already have an ongoing exam' };
+  }
+
+  return { hasOngoing: false };
+}
+
 // Get all exam results (admin only)
 router.get('/all', authenticateToken, isAdmin, (async (req, res) => {
   try {
@@ -199,30 +223,13 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.post('/start', authenticateToken, async (req, res) => {
   try {
     // Check if student has an ongoing exam
-    const ongoingExam = await ExamResult.findOne({
-      user: req.user?.id,
-      completed: false
-    });
-
-    if (ongoingExam) {
-      // Check if the ongoing exam is older than 3 hours (auto-expire)
-      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
-      if (ongoingExam.startTime < threeHoursAgo) {
-        // Auto-delete expired incomplete exam
-        await ExamResult.findByIdAndDelete(ongoingExam._id);
-        logger.info('Auto-deleted expired incomplete exam', {
-          userId: req.user?.id,
-          examId: ongoingExam._id,
-          startTime: ongoingExam.startTime
-        });
-      } else {
-        return res.status(400).json({
-          success: false,
-          message: 'You already have an ongoing exam'
-        });
-      }
+    const ongoingCheck = await checkAndHandleOngoingExam(req.user?.id || '');
+    if (ongoingCheck.hasOngoing) {
+      return res.status(400).json({
+        success: false,
+        message: ongoingCheck.message
+      });
     }
-
     // Get exam questions efficiently using the optimized questions endpoint logic
     const subjectConfig = [
       { name: 'Mathematics', count: 20 },
@@ -454,14 +461,43 @@ router.post('/prepare', authenticateToken, async (req, res) => {
 
     // Store question data temporarily in cache for when student actually starts exam
     const tempExamKey = `temp_exam:${req.user?.id}`;
+
+    // Create exam questions map for later use
+    const examQuestions = new Map();
+    questionsResponse.forEach(q => {
+      examQuestions.set(q._id.toString(), {
+        marks: q.marks || 1,
+        correctAnswer: q.correctAnswer
+      });
+    });
+
+    // Store minimal data needed for exam creation
     const examData = {
-      questions: questionsResponse,
+      questionIds: questionsResponse.map(q => q._id.toString()),
+      examQuestions: Object.fromEntries(examQuestions), // Convert Map to object for JSON storage
       totalObtainableMarks,
+      totalQuestions: questionsResponse.length,
       timestamp: Date.now()
     };
 
     if (redisService.isReady()) {
-      await redisService.cacheJSON(tempExamKey, examData, 3600); // 1 hour TTL
+      try {
+        await redisService.cacheJSON(tempExamKey, examData, 3600); // 1 hour TTL
+      } catch (error) {
+        logger.error('Failed to cache exam data', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          userId: req.user?.id
+        });
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to prepare exam. Please try again.'
+        });
+      }
+    } else {
+      return res.status(503).json({
+        success: false,
+        message: 'Exam preparation service is temporarily unavailable'
+      });
     }
 
     res.status(200).json({
@@ -484,19 +520,14 @@ router.post('/prepare', authenticateToken, async (req, res) => {
 // Actually start the exam (create exam record)
 router.post('/begin', authenticateToken, async (req, res) => {
   try {
-    // Check if student has an ongoing exam first
-    const ongoingExam = await ExamResult.findOne({
-      user: req.user?.id,
-      completed: false
-    });
-
-    if (ongoingExam) {
+    // Check if student has an ongoing exam (with auto-expiry)
+    const ongoingCheck = await checkAndHandleOngoingExam(req.user?.id || '');
+    if (ongoingCheck.hasOngoing) {
       return res.status(400).json({
         success: false,
-        message: 'You already have an ongoing exam'
+        message: ongoingCheck.message
       });
     }
-
     // Get exam data from temporary cache
     const tempExamKey = `temp_exam:${req.user?.id}`;
     let examData: any = null;
@@ -509,7 +540,7 @@ router.post('/begin', authenticateToken, async (req, res) => {
       }
     }
 
-    if (!examData || !examData.questions || examData.questions.length === 0) {
+    if (!examData || !examData.questionIds || examData.questionIds.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'No exam questions prepared. Please refresh and try again.'
@@ -527,11 +558,8 @@ router.post('/begin', authenticateToken, async (req, res) => {
 
     // Create a Map for exam questions (store answers for grading)
     const examQuestions = new Map();
-    examData.questions.forEach((q: any) => {
-      examQuestions.set(q._id.toString(), {
-        marks: q.marks || 1,
-        correctAnswer: q.correctAnswer
-      });
+    Object.entries(examData.examQuestions).forEach(([questionId, questionInfo]) => {
+      examQuestions.set(questionId, questionInfo);
     });
 
     // Create the exam result record
@@ -541,7 +569,7 @@ router.post('/begin', authenticateToken, async (req, res) => {
       completed: false,
       answers: new Map(),
       totalScore: 0,
-      totalQuestions: examData.questions.length,
+      totalQuestions: examData.totalQuestions,
       totalObtainableMarks: examData.totalObtainableMarks,
       examQuestions
     });
@@ -558,7 +586,7 @@ router.post('/begin', authenticateToken, async (req, res) => {
     logger.info('Exam started successfully', {
       userId: req.user?.id,
       examId: result._id,
-      questionCount: examData.questions.length
+      questionCount: examData.totalQuestions
     });
 
     res.status(201).json({
