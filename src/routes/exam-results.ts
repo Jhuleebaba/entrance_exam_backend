@@ -226,53 +226,34 @@ router.post('/start', authenticateToken, async (req, res) => {
         message: ongoingCheck.message
       });
     }
-    // Get exam questions efficiently using the optimized questions endpoint logic
+    // Get exam questions grouped by subject in specific order
+    // Questions 1-20: English, 21-40: Mathematics, 41-60: Verbal Reasoning, 
+    // 61-80: Quantitative Reasoning, 81-100: General Paper
     const subjectConfig = [
-      { name: 'Mathematics', count: 20 },
-      { name: 'English', count: 20 },
-      { name: 'Verbal Reasoning', count: 20 },
-      { name: 'Quantitative Reasoning', count: 20 },
-      { name: 'General Paper', count: 20 }
+      { name: 'English', count: 20 },           // Questions 1-20
+      { name: 'Mathematics', count: 20 },       // Questions 21-40
+      { name: 'Verbal Reasoning', count: 20 },  // Questions 41-60
+      { name: 'Quantitative Reasoning', count: 20 }, // Questions 61-80
+      { name: 'General Paper', count: 20 }      // Questions 81-100
     ];
 
-    // Try to get questions from cache first
-    let questionsResponse: any[] = [];
-    const examQuestionsKey = 'exam:questions:pool';
+    logger.info('Fetching questions grouped by subject in order: English → Mathematics → Verbal → Quantitative → General');
     
-    if (redisService.isReady()) {
+    let questionsResponse: any[] = [];
+    
+    // Fetch questions subject by subject to maintain order
+    for (const { name, count } of subjectConfig) {
       try {
-        const cachedQuestions = await redisService.getJSON<any[]>(examQuestionsKey);
-        if (cachedQuestions && cachedQuestions.length >= 100) {
-          // Use cached questions but still randomize selection
-          const shuffled = [...cachedQuestions].sort(() => 0.5 - Math.random());
-          questionsResponse = shuffled.slice(0, 100);
-          logger.info('Using cached exam questions', { count: questionsResponse.length });
-        }
-      } catch (error) {
-        logger.warn('Failed to get cached questions', { error: error instanceof Error ? error.message : 'Unknown error' });
-      }
-    }
-
-    // If no cached questions or insufficient count, fetch from database
-    if (questionsResponse.length === 0) {
-      logger.info('Fetching fresh questions from database');
-      
-      // Use parallel queries for better performance
-      const questionPromises = subjectConfig.map(async ({ name, count }) => {
-        return Question.aggregate([
+        const subjectQuestions = await Question.aggregate([
           { $match: { subject: name } },
           { $sample: { size: count } }
         ]);
-      });
-
-      // Execute all queries in parallel
-      const subjectResults = await Promise.all(questionPromises);
-      questionsResponse = subjectResults.flat();
-      
-      // Cache the questions for 30 minutes (questions don't change often)
-      if (redisService.isReady() && questionsResponse.length > 0) {
-        redisService.cacheJSON(examQuestionsKey, questionsResponse, 1800) // 30 minutes
-          .catch(error => logger.warn('Failed to cache questions', { error: error.message }));
+        
+        // Add subject questions in order
+        questionsResponse = questionsResponse.concat(subjectQuestions);
+        logger.info(`Fetched ${subjectQuestions.length} questions for ${name} (Questions ${questionsResponse.length - subjectQuestions.length + 1}-${questionsResponse.length})`);
+      } catch (error) {
+        logger.error(`Error fetching questions for ${name}:`, error);
       }
     }
 
@@ -386,53 +367,34 @@ router.post('/prepare', authenticateToken, async (req, res) => {
       }
     }
 
-    // Get exam questions efficiently using the optimized questions endpoint logic
+    // Get exam questions grouped by subject in specific order
+    // Questions 1-20: English, 21-40: Mathematics, 41-60: Verbal Reasoning, 
+    // 61-80: Quantitative Reasoning, 81-100: General Paper
     const subjectConfig = [
-      { name: 'Mathematics', count: 20 },
-      { name: 'English', count: 20 },
-      { name: 'Verbal Reasoning', count: 20 },
-      { name: 'Quantitative Reasoning', count: 20 },
-      { name: 'General Paper', count: 20 }
+      { name: 'English', count: 20 },           // Questions 1-20
+      { name: 'Mathematics', count: 20 },       // Questions 21-40
+      { name: 'Verbal Reasoning', count: 20 },  // Questions 41-60
+      { name: 'Quantitative Reasoning', count: 20 }, // Questions 61-80
+      { name: 'General Paper', count: 20 }      // Questions 81-100
     ];
 
-    // Try to get questions from cache first
-    let questionsResponse: any[] = [];
-    const examQuestionsKey = 'exam:questions:pool';
+    logger.info('Fetching questions grouped by subject in order: English → Mathematics → Verbal → Quantitative → General');
     
-    if (redisService.isReady()) {
+    let questionsResponse: any[] = [];
+    
+    // Fetch questions subject by subject to maintain order
+    for (const { name, count } of subjectConfig) {
       try {
-        const cachedQuestions = await redisService.getJSON<any[]>(examQuestionsKey);
-        if (cachedQuestions && cachedQuestions.length >= 100) {
-          // Use cached questions but still randomize selection
-          const shuffled = [...cachedQuestions].sort(() => 0.5 - Math.random());
-          questionsResponse = shuffled.slice(0, 100);
-          logger.info('Using cached exam questions', { count: questionsResponse.length });
-        }
-      } catch (error) {
-        logger.warn('Failed to get cached questions', { error: error instanceof Error ? error.message : 'Unknown error' });
-      }
-    }
-
-    // If no cached questions or insufficient count, fetch from database
-    if (questionsResponse.length === 0) {
-      logger.info('Fetching fresh questions from database');
-      
-      // Use parallel queries for better performance
-      const questionPromises = subjectConfig.map(async ({ name, count }) => {
-        return Question.aggregate([
+        const subjectQuestions = await Question.aggregate([
           { $match: { subject: name } },
           { $sample: { size: count } }
         ]);
-      });
-
-      // Execute all queries in parallel
-      const subjectResults = await Promise.all(questionPromises);
-      questionsResponse = subjectResults.flat();
-      
-      // Cache the questions for 30 minutes (questions don't change often)
-      if (redisService.isReady() && questionsResponse.length > 0) {
-        redisService.cacheJSON(examQuestionsKey, questionsResponse, 1800) // 30 minutes
-          .catch(error => logger.warn('Failed to cache questions', { error: error.message }));
+        
+        // Add subject questions in order
+        questionsResponse = questionsResponse.concat(subjectQuestions);
+        logger.info(`Fetched ${subjectQuestions.length} questions for ${name} (Questions ${questionsResponse.length - subjectQuestions.length + 1}-${questionsResponse.length})`);
+      } catch (error) {
+        logger.error(`Error fetching questions for ${name}:`, error);
       }
     }
 

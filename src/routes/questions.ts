@@ -220,38 +220,46 @@ router.get('/exam', auth, async (req, res) => {
   try {
     console.log('Fetching random questions for exam...');
     
-    // Fixed subjects configuration - 5 subjects with 20 questions each
+    // Questions grouped by subject in specific order for sequential numbering
+    // Questions 1-20: English, 21-40: Mathematics, 41-60: Verbal Reasoning, 
+    // 61-80: Quantitative Reasoning, 81-100: General Paper
     const subjectConfig = [
-      { name: 'Mathematics', count: 20 },
-      { name: 'English', count: 20 },
-      { name: 'Verbal Reasoning', count: 20 },
-      { name: 'Quantitative Reasoning', count: 20 },
-      { name: 'General Paper', count: 20 }
+      { name: 'English', count: 20 },           // Questions 1-20
+      { name: 'Mathematics', count: 20 },       // Questions 21-40
+      { name: 'Verbal Reasoning', count: 20 },  // Questions 41-60
+      { name: 'Quantitative Reasoning', count: 20 }, // Questions 61-80
+      { name: 'General Paper', count: 20 }      // Questions 81-100
     ];
 
-    // Use parallel queries for better performance
-    const questionPromises = subjectConfig.map(async ({ name, count }) => {
-      return Question.aggregate([
-        { $match: { subject: name } },
-        { $sample: { size: count } },
-        { 
-          $project: {
-            _id: 1,
-            question: 1,
-            options: 1,
-            marks: 1,
-            subject: 1
-            // Exclude correctAnswer for security
-          }
-        }
-      ]);
-    });
-
-    // Execute all queries in parallel
-    const subjectResults = await Promise.all(questionPromises);
+    console.log('Fetching questions grouped by subject in order: English → Mathematics → Verbal → Quantitative → General');
     
-    // Flatten the results
-    const questions = subjectResults.flat();
+    let questions: any[] = [];
+    
+    // Fetch questions subject by subject to maintain order
+    for (const { name, count } of subjectConfig) {
+      try {
+        const subjectQuestions = await Question.aggregate([
+          { $match: { subject: name } },
+          { $sample: { size: count } },
+          { 
+            $project: {
+              _id: 1,
+              question: 1,
+              options: 1,
+              marks: 1,
+              subject: 1
+              // Exclude correctAnswer for security
+            }
+          }
+        ]);
+        
+        // Add subject questions in order
+        questions = questions.concat(subjectQuestions);
+        console.log(`Fetched ${subjectQuestions.length} questions for ${name} (Questions ${questions.length - subjectQuestions.length + 1}-${questions.length})`);
+      } catch (error) {
+        console.error(`Error fetching questions for ${name}:`, error);
+      }
+    }
 
     // Validate we have enough questions
     if (questions.length < 100) {

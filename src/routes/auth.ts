@@ -397,11 +397,11 @@ Good luck!`,
       registrationEndDate: new Date('2025-07-05T23:59:59.000Z'),
       examYear: 2025,
       questionsPerSubject: {
-        Mathematics: 20,
-        English: 20,
-        'Quantitative Reasoning': 20,
-        'Verbal Reasoning': 20,
-        'General Paper': 20
+        English: 20,                    // Questions 1-20
+        Mathematics: 20,                // Questions 21-40
+        'Verbal Reasoning': 20,         // Questions 41-60
+        'Quantitative Reasoning': 20,   // Questions 61-80
+        'General Paper': 20             // Questions 81-100
       }
     };
     
