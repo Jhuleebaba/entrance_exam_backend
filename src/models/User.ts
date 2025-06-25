@@ -133,7 +133,7 @@ userSchema.pre('save', async function (next) {
     if (this.isNew && this.role === 'student') {
       // HARDCODED EXAM SETTINGS - No more database dependency
       const EXAM_START_DATE = '2025-07-12'; // Match auth.ts date: July 12, 2025
-      const EXAM_START_TIME = '09:00'; // Match auth.ts time: 9:00 AM
+      const EXAM_START_TIME = '08:00'; // 8:00 AM UTC = 9:00 AM UTC+1
       const EXAM_GROUP_SIZE = 10; // Students per group
       const EXAM_GROUP_INTERVAL_HOURS = 2; // Hours between groups
 

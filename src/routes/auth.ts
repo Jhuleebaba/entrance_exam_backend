@@ -391,8 +391,8 @@ IMPORTANT INSTRUCTIONS:
 8. If you experience any technical issues, contact the exam supervisor immediately.
 
 Good luck!`,
-      examStartTime: new Date('2025-07-12T09:00:00.000Z'),
-      examEndTime: new Date('2025-07-12T11:00:00.000Z'),
+      examStartTime: new Date('2025-07-12T08:00:00.000Z'), // 8:00 AM UTC = 9:00 AM UTC+1
+      examEndTime: new Date('2025-07-12T10:00:00.000Z'), // 10:00 AM UTC = 11:00 AM UTC+1
       registrationStartDate: new Date('2025-01-15T00:00:00.000Z'),
       registrationEndDate: new Date('2025-07-05T23:59:59.000Z'),
       examYear: 2025,
